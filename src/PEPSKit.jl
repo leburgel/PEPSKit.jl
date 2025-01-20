@@ -3,7 +3,7 @@ module PEPSKit
 using LinearAlgebra, Statistics, Base.Threads, Base.Iterators, Printf
 using Base: @kwdef
 using Compat
-using Accessors: @set
+using Accessors: @set, @reset
 using VectorInterface
 using TensorKit, KrylovKit, MPSKit, OptimKit, TensorOperations
 using ChainRulesCore, Zygote
@@ -40,9 +40,11 @@ include("operators/models.jl")
 include("environments/ctmrg_environments.jl")
 include("environments/transferpeps_environments.jl")
 include("environments/transferpepo_environments.jl")
+include("environments/pulling_through_environments.jl")
 
 include("algorithms/contractions/ctmrg_contractions.jl")
 include("algorithms/contractions/localoperator.jl")
+include("algorithms/contractions/pulling_through_contractions.jl")
 
 include("algorithms/ctmrg/sparse_environments.jl")
 include("algorithms/ctmrg/ctmrg.jl")
@@ -53,6 +55,8 @@ include("algorithms/ctmrg/gaugefix.jl")
 
 include("algorithms/time_evolution/gatetools.jl")
 include("algorithms/time_evolution/simpleupdate.jl")
+
+include("algorithms/pulling_through/pulling_through.jl")
 
 include("algorithms/toolbox.jl")
 
@@ -187,6 +191,7 @@ using .Defaults: set_scheduler!
 export set_scheduler!
 export SVDAdjoint, IterSVD, NonTruncSVDAdjoint
 export CTMRGEnv, SequentialCTMRG, SimultaneousCTMRG
+export PullingThrough, PullingThroughEnv
 export FixedSpaceTruncation, HalfInfiniteProjector, FullInfiniteProjector
 export LocalOperator
 export expectation_value, costfun, product_peps, correlation_length
