@@ -99,7 +99,7 @@ function pulling_through_iterate(envinit, state, alg::PullingThrough)
 
             ϵ = calc_convergence(env)
 
-            env = alg.finalize(iter, ϵ, env, state)
+            env = alg.finalize(iter, env, state)
 
             if ϵ <= alg.tol
                 pt_logfinish!(log, iter, ϵ, N)
