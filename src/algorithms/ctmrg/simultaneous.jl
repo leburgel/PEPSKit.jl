@@ -9,12 +9,13 @@ the projectors are applied to the corners from two sides simultaneously. The pro
 computed using `projector_alg` from `svd_alg` SVDs where the truncation scheme is set via 
 `trscheme`.
 """
-struct SimultaneousCTMRG <: CTMRGAlgorithm
+struct SimultaneousCTMRG{F} <: CTMRGAlgorithm
     tol::Float64
     maxiter::Int
     miniter::Int
     verbosity::Int
     projector_alg::ProjectorAlgorithm
+    finalize::F
 end
 function SimultaneousCTMRG(;
     tol=Defaults.ctmrg_tol,
@@ -24,9 +25,15 @@ function SimultaneousCTMRG(;
     projector_alg=Defaults.projector_alg_type,
     svd_alg=Defaults.svd_alg,
     trscheme=Defaults.trscheme,
+    finalize=Defaults._finalize,
 )
     return SimultaneousCTMRG(
-        tol, maxiter, miniter, verbosity, projector_alg(; svd_alg, trscheme, verbosity)
+        tol,
+        maxiter,
+        miniter,
+        verbosity,
+        projector_alg(; svd_alg, trscheme, verbosity),
+        finalize,
     )
 end
 

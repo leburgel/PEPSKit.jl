@@ -66,9 +66,16 @@ struct PullingThroughEnv{C<:MPSKit.MPSBondTensor,T<:MPSKit.GenericMPSTensor}
     WR::Union{Nothing,T}
     LN::Union{Nothing,C}
     RW::Union{Nothing,C}
-    function PullingThroughEnv(N::T, W::T, NL::Union{Nothing,T}, WR::Union{Nothing,T}, LN::Union{Nothing,C}, RW::Union{Nothing,C}) where {C,T}
+    function PullingThroughEnv(
+        N::T,
+        W::T,
+        NL::Union{Nothing,T},
+        WR::Union{Nothing,T},
+        LN::Union{Nothing,C},
+        RW::Union{Nothing,C},
+    ) where {C,T}
         Cout = _corner_type(N)
-        new{Cout,T}(N, W, NL, WR, LN, RW)
+        return new{Cout,T}(N, W, NL, WR, LN, RW)
     end
 end
 
@@ -80,9 +87,7 @@ end
 
 # symmetric pulling through, only use a single virtual space
 
-function PullingThroughEnv(
-    st::InfiniteSquareNetwork, chi::ElementarySpaceLike
-)
+function PullingThroughEnv(st::InfiniteSquareNetwork, chi::ElementarySpaceLike)
     return PullingThroughEnv(randn, ComplexF64, st, chi)
 end
 function PullingThroughEnv(

@@ -44,6 +44,8 @@ function MPSKit.leading_boundary(envinit, state, alg::CTMRGAlgorithm)
             env, = ctmrg_iteration(state, env, alg)  # Grow and renormalize in all 4 directions
             η, CS, TS = calc_convergence(env, CS, TS)
 
+            env = alg.finalize(iter, η, env, state)
+
             if η ≤ alg.tol && iter ≥ alg.miniter
                 ctmrg_logfinish!(log, iter, η, state, env)
                 break

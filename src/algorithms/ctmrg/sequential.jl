@@ -9,12 +9,13 @@ column-wise. This is implemented as a growing and projecting step to the left, f
 a clockwise rotation (performed four times). The projectors are computed using
 `projector_alg` from `svd_alg` SVDs where the truncation scheme is set via `trscheme`.
 """
-struct SequentialCTMRG <: CTMRGAlgorithm
+struct SequentialCTMRG{F} <: CTMRGAlgorithm
     tol::Float64
     maxiter::Int
     miniter::Int
     verbosity::Int
     projector_alg::ProjectorAlgorithm
+    finalize::F
 end
 function SequentialCTMRG(;
     tol=Defaults.ctmrg_tol,
@@ -24,9 +25,15 @@ function SequentialCTMRG(;
     projector_alg=Defaults.projector_alg_type,
     svd_alg=Defaults.svd_alg,
     trscheme=Defaults.trscheme,
+    finalize=Defaults._finalize,
 )
     return SequentialCTMRG(
-        tol, maxiter, miniter, verbosity, projector_alg(; svd_alg, trscheme, verbosity)
+        tol,
+        maxiter,
+        miniter,
+        verbosity,
+        projector_alg(; svd_alg, trscheme, verbosity),
+        finalize,
     )
 end
 

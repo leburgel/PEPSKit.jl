@@ -3,19 +3,20 @@
 
 Pulling-through contraction algorithm.
 """
-@kwdef struct PullingThrough
+@kwdef struct PullingThrough{F}
     tol::Float64 = Defaults.tol
     maxiter::Int = Defaults.maxiter
     verbosity::Int = Defaults.verbosity
 
     alg_gauge = MPSKit.Defaults.alg_gauge(; verbosity=1, maxiter=100)
     alg_eigsolve = MPSKit.Defaults.alg_eigsolve(; ishermitian=false)
+
+    finalize::F = Defaults._finalize
 end
 
 function normalize_ish(A::MPSKit.GenericMPSTensor; tol=1e-12)
     init = MPSKit.randomize!(similar(A, space(A, 1), space(A, 1)))
-    vals, = eigsolve(flip(MPSKit.TransferMatrix(A, A)),
-                                              init, 1, :LM; tol=tol)
+    vals, = eigsolve(flip(MPSKit.TransferMatrix(A, A)), init, 1, :LM; tol=tol)
     λ = first(vals)
     return A / sqrt(abs(first(λ)))
 end
@@ -49,7 +50,7 @@ function pulling_through_update(
     λ, W_next = MPSKit.fixedpoint(_tw, env.W, :LM, alg_eigsolve)
     @reset env.W = W_next
     # @reset env.W = normalize_ish(W_next) # TODO: normalize? how important is this?
-    
+
     return env, λ
 end
 function pulling_through_update(
@@ -97,6 +98,8 @@ function pulling_through_iterate(envinit, state, alg::PullingThrough)
             env, N = pulling_through_update(state, env, alg_eigsolve, alg_gauge)
 
             ϵ = calc_convergence(env)
+
+            env = alg.finalize(iter, ϵ, env, state)
 
             if ϵ <= alg.tol
                 pt_logfinish!(log, iter, ϵ, N)
