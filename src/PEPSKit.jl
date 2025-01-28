@@ -132,7 +132,7 @@ module Defaults
     const svd_alg = SVDAdjoint(; fwd_alg, rrule_alg)
     const projector_alg_type = HalfInfiniteProjector
     const projector_alg = projector_alg_type(svd_alg, trscheme, 2)
-    _finalize(iter, η, env, state) = env
+    _finalize(iter, env, state) = env
     const ctmrg_alg = SimultaneousCTMRG(
         ctmrg_tol, ctmrg_maxiter, ctmrg_miniter, 2, projector_alg, finalize
     )

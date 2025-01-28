@@ -14,13 +14,6 @@ Pulling-through contraction algorithm.
     finalize::F = Defaults._finalize
 end
 
-function normalize_ish(A::MPSKit.GenericMPSTensor; tol=1e-12)
-    init = MPSKit.randomize!(similar(A, space(A, 1), space(A, 1)))
-    vals, = eigsolve(flip(MPSKit.TransferMatrix(A, A)), init, 1, :LM; tol=tol)
-    λ = first(vals)
-    return A / sqrt(abs(first(λ)))
-end
-
 #
 # Iterative contraction routine
 #
@@ -33,6 +26,14 @@ Perform a single pulling through iteration.
 function pulling_through_update(
     state::InfinitePEPS, env::PullingThroughEnv, alg_eigsolve, alg_gauge
 )
+    # update west
+    env = gauge_north(env, alg_gauge)
+    function _tw(x)
+        return transfer_west(x, env.NL, only(state.A), only(state.A))
+    end
+    _, W_next = MPSKit.fixedpoint(_tw, env.W, :LM, alg_eigsolve)
+    @reset env.W = W_next
+
     # update north
     env = gauge_west(env, alg_gauge)
     function _tn(x)
@@ -40,32 +41,12 @@ function pulling_through_update(
     end
     λ, N_next = MPSKit.fixedpoint(_tn, env.N, :LM, alg_eigsolve)
     @reset env.N = N_next
-    # @reset env.N = normalize_ish(N_next) # TODO: normalize? how important is this?
-
-    # update west
-    env = gauge_north(env, alg_gauge)
-    function _tw(x)
-        return transfer_west(x, env.NL, only(state.A), only(state.A))
-    end
-    λ, W_next = MPSKit.fixedpoint(_tw, env.W, :LM, alg_eigsolve)
-    @reset env.W = W_next
-    # @reset env.W = normalize_ish(W_next) # TODO: normalize? how important is this?
 
     return env, λ
 end
 function pulling_through_update(
     partfunc::InfinitePartitionFunction, env::PullingThroughEnv, alg_eigsolve, alg_gauge
 )
-    # update north
-    env = gauge_west(env, alg_gauge)
-    function _tn(x)
-        return transfer_north(x, env.WR, only(partfunc.A))
-    end
-    λ, N_next = MPSKit.fixedpoint(_tn, env.N, :LM, alg_eigsolve)
-
-    @reset env.N = N_next
-    # @reset env.N = normalize_ish(N_next) # TODO: normalize? how important is this?
-
     # update west
     env = gauge_north(env, alg_gauge)
     function _tw(x)
@@ -73,7 +54,14 @@ function pulling_through_update(
     end
     _, W_next = MPSKit.fixedpoint(_tw, env.W, :LM, alg_eigsolve)
     @reset env.W = W_next
-    # @reset env.W = normalize_ish(W_next) # TODO: normalize? how important is this?
+
+    # update north
+    env = gauge_west(env, alg_gauge)
+    function _tn(x)
+        return transfer_north(x, env.WR, only(partfunc.A))
+    end
+    λ, N_next = MPSKit.fixedpoint(_tn, env.N, :LM, alg_eigsolve)
+    @reset env.N = N_next
 
     return env, λ
 end
@@ -112,6 +100,10 @@ function pulling_through_iterate(envinit, state, alg::PullingThrough)
             end
         end
     end
+
+    # normalize at the end
+    @reset env.N = normalize_mps(env.N; tol=alg.alg_gauge.alg.tol)
+    @reset env.W = normalize_mps(env.W; tol=alg.alg_gauge.alg.tol)
 
     return env, N, ϵ
 end
@@ -160,7 +152,8 @@ function MPSKit.leading_boundary(envinit, state, alg::PullingThrough)
     # run the iterative algorithm
     env, N, ϵ = pulling_through_iterate(envinit, state, alg)
 
-    # TODO: finalize environment and impose all the symmetries
-    # TODO: implement fixed-point differentiation in symmetric gauge
+    # gauge-fix and symmetrize
+    env, = symmetric_environment(env)
+
     return env, N, ϵ
 end
