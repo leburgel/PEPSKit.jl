@@ -27,7 +27,7 @@ P = O[1]
 
 pt_state = InfinitePartitionFunction(P)
 pt_envinit = PullingThroughEnv(pt_state, ℂ^χ)
-pt_alg = PullingThrough(; tol=1e-12, maxiter=100, verbosity=2)
+pt_alg = PullingThrough(; tol=1e-10, maxiter=100, verbosity=3, dynamic_tols=false)
 
 # run pure contraction, not 
 pt_env, pt_λ, = PEPSKit.pulling_through_iterate(pt_envinit, pt_state, pt_alg)
@@ -47,7 +47,7 @@ X = symm_env.X
 A = symm_env.A
 Up = symm_env.U
 
-# check if we actually made N equal to B
+# check if we actually made N equal to W
 ovlp = tr(A' * PEPSKit.apply_physical_operator(W, Up')) / (norm(A) * norm(W))
 @show abs(ovlp)
 
@@ -57,7 +57,7 @@ ovlp = tr(A' * PEPSKit.apply_physical_operator(W, Up')) / (norm(A) * norm(W))
 @show tr(X^4)
 
 # check if A is hermitian
-Ā = PEPSKit.physical_flip(permute(A', ((1, 3), (2,))))
+Ā = PEPSKit.apply_physical_operator(PEPSKit._conj(A), Up')
 @show norm(A - Ā)
 
 # check the left fixed point of the transfer matrix
@@ -100,6 +100,7 @@ X2´ = MPSKit.transfer_left(X^2, A, A)
 @show norm(LHS2 - λ_out * RHS)
 # works, so we should just pretend this is enough?
 
-# TODO: should we actually think of X as positive, or not?
+# TODO: should we actually think of X as real for the fixed point equations, or not?
+# TODO: add a PEPS test
 
 nothing

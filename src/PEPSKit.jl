@@ -56,11 +56,11 @@ include("algorithms/ctmrg/gaugefix.jl")
 include("algorithms/time_evolution/gatetools.jl")
 include("algorithms/time_evolution/simpleupdate.jl")
 
-include("algorithms/pulling_through/pulling_through.jl")
-
 include("algorithms/toolbox.jl")
 
 include("algorithms/peps_opt.jl")
+
+include("algorithms/pulling_through/pulling_through.jl")
 
 include("utility/symmetrization.jl")
 

@@ -57,8 +57,8 @@ ctm_env = leading_boundary(ctm_envinit, ctm_state, ctm_alg)
 vumps_errs = Float64[]
 vumps_state = InfiniteTransferPEPS(InfinitePEPS(t), 1, 1)
 vumps_env_init = initializeMPS(vumps_state, [ℂ^χ])
-vumps_finalize = vumps_error_tracker(vumps_errs, vumps_envinit)
-vumps_alg = VUMPS(; tol=1e-12, maxiter=100, verbosity=2, finalize=vumps_finalize)
+vumps_finalize = vumps_error_tracker(vumps_errs, vumps_env_init)
+vumps_alg = VUMPS(; tol=1e-12, maxiter=200, verbosity=2, finalize=vumps_finalize)
 
 vumps_env, vumps_env_env, = leading_boundary(vumps_env_init, vumps_state, vumps_alg)
 
@@ -68,7 +68,7 @@ pt_errs = Float64[]
 pt_state = InfinitePEPS(t)
 pt_envinit = PullingThroughEnv(pt_state, ℂ^χ)
 pt_finalize = pt_error_tracker(pt_errs, pt_envinit)
-pt_alg = PullingThrough(; tol=1e-12, maxiter=100, verbosity=2, finalize=pt_finalize)
+pt_alg = PullingThrough(; tol=1e-12, maxiter=200, verbosity=2, finalize=pt_finalize)
 
 pt_env, = leading_boundary(pt_envinit, pt_state, pt_alg)
 

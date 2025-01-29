@@ -172,23 +172,23 @@ import TensorKitManifolds as TKM
 
 const SquareTensorMap{S,N} = AbstractTensorMap{S,N,N}
 
-function normalize_mps(A::MPSKit.GenericMPSTensor; tol=1e-12)
+function normalize_mps(A::MPSKit.GenericMPSTensor; tol=1e-14)
     init = MPSKit.randomize!(similar(A, space(A, 1), space(A, 1)))
     λ, = MPSKit.fixedpoint(flip(MPSKit.TransferMatrix(A, A)), init, :LM; tol=tol)
     return A / sqrt(abs(λ))
 end
 
 """
-    absorb_unitary(A, U)
+    absorb_bond_unitary(A, U)
 
-Absorb a unitary into an MPS tensor.
+Absorb a bond unitary into an MPS tensor.
 
 ```
  ←A←  <--  ←U←A←U'←
   ↓           ↓
 ```
 """
-@generated function absorb_unitary(
+@generated function absorb_bond_unitary(
     A::MPSKit.GenericMPSTensor{S,N₁}, U::MPSKit.MPSBondTensor{S}
 ) where {S,N₁}
     A_out_e = tensorexpr(:A_out, -(1:N₁), -(N₁ + 1))
@@ -196,6 +196,26 @@ Absorb a unitary into an MPS tensor.
     Ū_e = tensorexpr(:U, -(N₁ + 1), 2)
     U_e = tensorexpr(:U, -1, 1)
     return macroexpand(@__MODULE__, :(return @tensor $A_out_e := $U_e * $A_e * conj($Ū_e)))
+end
+
+"""
+    absorb_bond_matrix(A, X)
+
+Absorb a bond unitary into an MPS tensor.
+
+```
+ ←A←  <--  ←X←A←X←
+  ↓           ↓
+```
+"""
+@generated function absorb_bond_matrix(
+    A::MPSKit.GenericMPSTensor{S,N₁}, X::MPSKit.MPSBondTensor{S}
+) where {S,N₁}
+    A_out_e = tensorexpr(:A_out, -(1:N₁), -(N₁ + 1))
+    A_e = tensorexpr(:A, (1, (-(2:N₁))...), 2)
+    XR_e = tensorexpr(:X, 2, -(N₁ + 1))
+    XL_e = tensorexpr(:X, -1, 1)
+    return macroexpand(@__MODULE__, :(return @tensor $A_out_e := $XL_e * $A_e * $XR_e))
 end
 
 """
@@ -347,6 +367,10 @@ function LinearAlgebra.schur!(t::TensorMap; kwargs...)
     return T, Z, values
 end
 
+function _conj(A::MPSKit.GenericMPSTensor{S,N₁}) where {S,N₁}
+    return permute(A', ((1, (3:(N₁ + 1))...), (2,)))
+end
+
 #
 # Symmetric contraction environment
 #
@@ -374,15 +398,16 @@ function symmetric_environment(
     verbosity=1,
 )
     # check convergence and unpack
-    @assert norm(env.LN - env.RW) < tol_conv "Pulling through contraction is not converged!"
+    norm(env.LN - env.RW) < tol_conv ||
+        @warn "Pulling through contraction is not converged!"
     N = env.N
     W = env.W
     X = env.LN
 
     # diagonalize corner tensor
     u, X, v = tsvd(X, (1,), (2,))
-    N = absorb_unitary(N, v)
-    W = absorb_unitary(W, u')
+    N = absorb_bond_unitary(N, v)
+    W = absorb_bond_unitary(W, u')
 
     # match north and west edges:
     # find the left fixed point of the generalized left transfer matrix
@@ -394,7 +419,7 @@ function symmetric_environment(
     # if the leading eigenvalue is not a phase, iteratively update the physical map until it is
     iter = 0
     Up = Up0
-    while !isapprox(abs(λ), 1.0; atol=1e-12) && iter < maxiter
+    while !isapprox(abs(λ), 1.0; atol=tol_conv) && iter < maxiter
         iter += 1
         verbosity > 1 && @info "Symmetrization at iter=$iter: abs(λ)=$(abs(λ))"
 
@@ -402,7 +427,7 @@ function symmetric_environment(
         Up, = optimize(
             get_unitary_costfun(Q, N, W),
             Up,
-            LBFGS(; maxiter=5, gradtol=1e-12, verbosity=1);
+            LBFGS(; maxiter=5, gradtol=tol_eigs, verbosity=verbosity - 1);
             inner=TKM.Unitary.inner,
             retract=TKM.Unitary.retract,
             (transport!)=(TKM.Unitary.transport!),
@@ -417,8 +442,8 @@ function symmetric_environment(
 
     # absorb the unitary into the corner tensor and update the north and west edges
     Xm, V, = schur(Q' * X)
-    Nm = absorb_unitary(N, V')
-    Wm = absorb_unitary(W, (Q * V)')
+    Nm = absorb_bond_unitary(N, V')
+    Wm = absorb_bond_unitary(W, (Q * V)')
 
     # one more time, just to be sure...
     λ, = MPSKit.fixedpoint(gen_transfer_left(Nm, Wm, Up), Q, :LM; tol=tol_eigs)
@@ -427,12 +452,32 @@ function symmetric_environment(
     Xm = Xm / (tr(Xm^4)^(1 / 4))
 
     # impose hermiticity on Nm
-    Nm_dag = permute(Nm', ((1, 3), (2,)))
+    Nm_dag = _conj(Nm)
     N̄m = apply_physical_operator(Nm_dag, Up') # is this actually what we want to do?
     Nm = (Nm + N̄m) / 2
     Nm = normalize_mps(Nm)
 
     return SymmetricEnv(Xm, Nm, Up), Wm, λ
+end
+
+function Base.complex(env::SymmetricEnv)
+    return SymmetricEnv(complex(env.X), complex(env.A), complex(env.U))
+end
+
+# to be able to start iterating again with a symmetrized initial guess
+function PullingThroughEnv(env::SymmetricEnv)
+    # flip west, seed gauging matrices with corner tensor
+    return PullingThroughEnv(
+        env.A, apply_physical_operator(env.A, env.U); LN=env.X, RW=env.X
+    )
+end
+
+# In-place update of environment
+function update!(env::SymmetricEnv{C,T,P}, env´::SymmetricEnv{C,T,P}) where {C,T,P}
+    copy!(env.A, env´.A)
+    copy!(env.X, env´.X)
+    copy!(env.U, env´.U)
+    return env
 end
 
 # Custom adjoint for SymmetricEnv constructor, needed for fixed-point differentiation
@@ -446,17 +491,23 @@ function ChainRulesCore.rrule(::typeof(getproperty), e::SymmetricEnv, name::Symb
     result = getproperty(e, name)
     if name === :X
         function corner_pullback(ΔX)
-            return NoTangent(), SymmetricEnv(ΔX, zerovector(e.A), zerovector(e.U)), NoTangent()
+            return NoTangent(),
+            SymmetricEnv(ΔX, zerovector(e.A), zerovector(e.U)),
+            NoTangent()
         end
         return result, corner_pullback
     elseif name === :A
         function edge_pullback(ΔA)
-            return NoTangent(), SymmetricEnv(zerovector(e.X), ΔA, zerovector(e.U)), NoTangent()
+            return NoTangent(),
+            SymmetricEnv(zerovector(e.X), ΔA, zerovector(e.U)),
+            NoTangent()
         end
         return result, edge_pullback
     elseif name === :U
-        function flip_pullback(ΔU)
-            return NoTangent(), SymmetricEnv(zerovector(e.X), zerovector(e.A), ΔU), NoTangent()
+        function flip_pullback(ΔU) # TODO: this does not make sense at all, we should only ever get a ZeroTangent here...
+            return NoTangent(),
+            SymmetricEnv(zerovector(e.X), zerovector(e.A), ΔU),
+            NoTangent()
         end
         return result, flip_pullback
     else
@@ -464,3 +515,110 @@ function ChainRulesCore.rrule(::typeof(getproperty), e::SymmetricEnv, name::Symb
         throw(ArgumentError("No rrule for getproperty of $name"))
     end
 end
+
+## TODO: make the symmetric pulling through environments play nice with Zygote and VectorInterface...
+
+# Functions used for FP differentiation and by KrylovKit.linsolve
+function Base.:+(e₁::SymmetricEnv, e₂::SymmetricEnv)
+    return SymmetricEnv(e₁.X + e₂.X, e₁.A + e₂.A, e₁.U)
+end
+function Base.:-(e₁::SymmetricEnv, e₂::SymmetricEnv)
+    return SymmetricEnv(e₁.X - e₂.X, e₁.A - e₂.A, e₁.U)
+end
+Base.:*(α::Number, e::SymmetricEnv) = SymmetricEnv(α * e.X, α * e.A, e.U)
+Base.:*(e::SymmetricEnv, α::Number) = α * e
+Base.similar(e::SymmetricEnv) = SymmetricEnv(similar(e.X), similar(e.A), e.U)
+
+function LinearAlgebra.mul!(edst::SymmetricEnv, esrc::SymmetricEnv, α::Number)
+    mul!(edst.X, esrc.X, α)
+    mul!(edst.A, esrc.A, α)
+    return edst
+end
+
+function LinearAlgebra.rmul!(e::SymmetricEnv, α::Number)
+    rmul!(e.X, α)
+    rmul!(e.A, α)
+    return e
+end
+
+function LinearAlgebra.axpy!(α::Number, e₁::SymmetricEnv, e₂::SymmetricEnv)
+    axpy!(α, e₁.X, e₂.X)
+    axpy!(α, e₁.A, e₂.A)
+    return e₂
+end
+
+function LinearAlgebra.axpby!(α::Number, e₁::SymmetricEnv, β::Number, e₂::SymmetricEnv)
+    axpby!(α, e₁.X, β, e₂.X)
+    axpby!(α, e₁.A, β, e₂.A)
+    return e₂
+end
+
+function LinearAlgebra.dot(e₁::SymmetricEnv, e₂::SymmetricEnv)
+    return dot(e₁.X, e₂.X) + dot(e₁.A, e₂.A)
+end
+
+# VectorInterface
+# ---------------
+
+# Note: the following methods consider the environment tensors as separate components of one
+# big vector. In other words, the associated vector space is not the natural one associated
+# to the original (physical) system, and addition, scaling, etc. are performed element-wise.
+
+import VectorInterface as VI
+
+function VI.scalartype(::Type{SymmetricEnv{C,T,P}}) where {C,T,P}
+    S₁ = scalartype(C)
+    S₂ = scalartype(T)
+    S₃ = scalartype(P)
+    return promote_type(S₁, S₂, S₃)
+end
+
+function VI.zerovector(env::SymmetricEnv, ::Type{S}) where {S<:Number}
+    _zerovector = Base.Fix2(zerovector, S)
+    return SymmetricEnv(_zerovector(env.X), _zerovector(env.A), env.U)
+end
+function VI.zerovector!(env::SymmetricEnv)
+    zerovector!(env.X)
+    zerovector!(env.A)
+    return env
+end
+VI.zerovector!!(env::SymmetricEnv) = zerovector!(env)
+
+function VI.scale(env::SymmetricEnv, α::Number)
+    _scale = Base.Fix2(scale, α)
+    return SymmetricEnv(_scale(env.X), _scale(env.A), env.U)
+end
+function VI.scale!(env::SymmetricEnv, α::Number)
+    _scale! = Base.Fix2(scale!, α)
+    _scale!(env.X)
+    _scale!(env.A)
+    return env
+end
+function VI.scale!(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number)
+    _scale!(x, y) = scale!(x, y, α)
+    _scale!(env₁.X, env₂.X)
+    _scale!(env₁.A, env₂.A)
+    return env₁
+end
+VI.scale!!(env::SymmetricEnv, α::Number) = scale!(env, α)
+VI.scale!!(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number) = scale!(env₁, env₂, α)
+
+function VI.add(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number, β::Number)
+    _add(x, y) = add(x, y, α, β)
+    return SymmetricEnv(_add(env₁.X, env₂.X), _add(env₁.A, env₂.A), env₁.U)
+end
+function VI.add!(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number, β::Number)
+    _add!(x, y) = add!(x, y, α, β)
+    _add!(env₁.X, env₂.X)
+    _add!(env₁.A, env₂.A)
+    return env₁
+end
+function VI.add!!(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number, β::Number)
+    return add!(env₁, env₂, α, β)
+end
+
+# Exploiting the fact that VectorInterface works for tuples:
+function VI.inner(env₁::SymmetricEnv, env₂::SymmetricEnv)
+    return inner((env₁.X, env₁.A), (env₂.X, env₂.A))
+end
+VI.norm(env::SymmetricEnv) = norm((env.X, env.A))

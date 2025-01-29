@@ -89,13 +89,13 @@ step by setting `reuse_env` to true. Otherwise a random environment is used at e
 step. The CTMRG gradient itself is computed using the `gradient_alg` algorithm.
 """
 struct PEPSOptimize{G}
-    boundary_alg::CTMRGAlgorithm
+    boundary_alg
     optimizer::OptimKit.OptimizationAlgorithm
     reuse_env::Bool
     gradient_alg::G
 
     function PEPSOptimize(  # Inner constructor to prohibit illegal setting combinations
-        boundary_alg::CTMRGAlgorithm,
+        boundary_alg,
         optimizer,
         reuse_env,
         gradient_alg::G,
@@ -116,6 +116,9 @@ function PEPSOptimize(;
 )
     return PEPSOptimize(boundary_alg, optimizer, reuse_env, gradient_alg)
 end
+
+_maybe_first(x) = x
+_maybe_first(x::Tuple) = x[1]
 
 """
     fixedpoint(ψ₀::InfinitePEPS{T}, H, alg::PEPSOptimize, [env₀::CTMRGEnv];
@@ -142,16 +145,17 @@ The function returns a `NamedTuple` which contains the following entries:
 - `numfg`: total number of calls to the energy function
 """
 function fixedpoint(
-    ψ₀::InfinitePEPS{F},
+    ψ₀::InfinitePEPS,
     H,
     alg::PEPSOptimize,
-    env₀::CTMRGEnv=CTMRGEnv(ψ₀, field(F)^20);
+    env₀;
     (finalize!)=OptimKit._finalize!,
     symmetrization=nothing,
-) where {F}
+)
     if isnothing(symmetrization)
         retract = peps_retract
     else
+        println("actually using symmetrization")
         retract, symm_finalize! = symmetrize_retract_and_finalize!(symmetrization)
         fin! = finalize!  # Previous finalize!
         finalize! = (x, f, g, numiter) -> fin!(symm_finalize!(x, f, g, numiter)..., numiter)
@@ -175,12 +179,14 @@ function fixedpoint(
                 alg.boundary_alg;
                 alg_rrule=alg.gradient_alg,
             )
+            envs´ = _maybe_first(envs´) # different leading_boundarys have different return signatures
             ignore_derivatives() do
                 alg.reuse_env && update!(envs, envs´)
             end
             return costfun(ψ, envs´, H)
         end
         g = only(gs)  # `withgradient` returns tuple of gradients `gs`
+        symmetrize!(g, symmetrization) # TODO: decide whether we want this...
         return E, g
     end
 

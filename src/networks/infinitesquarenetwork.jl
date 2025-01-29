@@ -50,6 +50,9 @@ end
 function Base.:-(A₁::NWType, A₂::NWType) where {NWType<:InfiniteSquareNetwork}
     return NWType(unitcell(A₁) - unitcell(A₂))
 end
+function Base.:-(A::NWType) where {NWType<:InfiniteSquareNetwork}
+    return NWType(-unitcell(A))
+end
 function Base.:*(α::Number, A::NWType) where {NWType<:InfiniteSquareNetwork}
     return NWType(α * unitcell(A))
 end

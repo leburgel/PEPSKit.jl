@@ -134,6 +134,15 @@ function ChainRulesCore.rrule(::Type{<:InfinitePEPS}, A::Matrix{T}) where {T<:PE
     return peps, InfinitePEPS_pullback
 end
 
+function ChainRulesCore.rrule(::typeof(Base.getproperty), state::InfinitePEPS, f::Symbol)
+    if f === :A
+        get_A_pullback(ΔA) = NoTangent(), InfinitePEPS(unthunk(ΔA)), NoTangent()
+        return state.A, get_A_pullback
+    else
+        throw(ArgumentError("Invalid property $f"))
+    end
+end
+
 function ChainRulesCore.rrule(::typeof(rotl90), peps::InfinitePEPS)
     peps′ = rotl90(peps)
     function rotl90_pullback(Δpeps)
