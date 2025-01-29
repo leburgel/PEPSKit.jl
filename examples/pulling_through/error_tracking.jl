@@ -23,10 +23,10 @@ end
 # implement singular value distance for all environment types
 
 function PEPSKit.calc_convergence(
-    envs_new::Union{InfiniteMPS,MPSMultiline}, envs_old::Union{InfiniteMPS,MPSMultiline}
+    envs_new::Union{InfiniteMPS,MultilineMPS}, envs_old::Union{InfiniteMPS,MultilineMPS}
 )
-    CS_new = map(x -> tsvd(x)[2], envs_new.CR)
-    CS_old = map(x -> tsvd(x)[2], envs_old.CR)
+    CS_new = map(x -> tsvd(x)[2], envs_new.C)
+    CS_old = map(x -> tsvd(x)[2], envs_old.C)
     return maximum(PEPSKit._singular_value_distance, zip(CS_old, CS_new))
 end
 

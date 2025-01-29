@@ -1,7 +1,3 @@
-const PEPSSandwich{T<:PEPSTensor} = Tuple{T,T}
-ket(p::PEPSSandwich) = p[1]
-bra(p::PEPSSandwich) = p[2]
-
 # PEPS contractions
 
 function transfer_north(

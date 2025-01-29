@@ -170,7 +170,7 @@ end
 
 import TensorKitManifolds as TKM
 
-const SquareTensorMap{S,N} = AbstractTensorMap{S,N,N}
+const SquareTensorMap{S,N} = AbstractTensorMap{<:Any,S,N,N}
 
 function normalize_mps(A::MPSKit.GenericMPSTensor; tol=1e-14)
     init = MPSKit.randomize!(similar(A, space(A, 1), space(A, 1)))
@@ -248,8 +248,8 @@ Apply a (generalized) transfer matrix to the left.
 """
 @generated function transfer_left(
     Q::SquareTensorMap{S,1},
-    N::GenericMPSTensor{S,N₁},
-    W::GenericMPSTensor{S,N₁},
+    N::MPSKit.GenericMPSTensor{S,N₁},
+    W::MPSKit.GenericMPSTensor{S,N₁},
     U::SquareTensorMap{S,N₂},
 ) where {S,N₁,N₂}
     # TODO: assert that N₁ and N₂ are consistent?
@@ -269,12 +269,6 @@ function gen_transfer_left(N, W, U)
     return tf
 end
 
-# TODO: remove this after updating to newer MPSKit version
-function MPSKit.fixedpoint(A, x₀, which::Symbol; kwargs...)
-    alg = KrylovKit.eigselector(A, scalartype(x₀); kwargs...)
-    return MPSKit.fixedpoint(A, x₀, which, alg)
-end
-
 """
     physical_env(N, W, Q)
 
@@ -290,7 +284,9 @@ matrix.
 ```
 """
 @generated function physical_env(
-    N::GenericMPSTensor{S,N₁}, W::GenericMPSTensor{S,N₁}, Q::AbstractTensorMap{S,1,1}
+    N::MPSKit.GenericMPSTensor{S,N₁},
+    W::MPSKit.GenericMPSTensor{S,N₁},
+    Q::SquareTensorMap{S,1},
 ) where {S,N₁}
     N₂ = N₁ - 1
     U_e = tensorexpr(:U, -(1:N₂), -((1:N₂) .+ N₂))
@@ -359,7 +355,7 @@ function LinearAlgebra.schur!(t::TensorMap; kwargs...)
     Z = similar(t, domain(t) ← W)
     values = SectorDict{I,Vector{scalartype(t)}}()
     for (c, b) in blocks(t)
-        Tb, Zb, valb = LinearAlgebra.schur!(b; kwargs...)
+        Tb, Zb, valb = LinearAlgebra.schur!(collect(b); kwargs...)
         copy!(block(T, c), Tb)
         copy!(block(Z, c), Zb)
         values[c] = valb
@@ -413,13 +409,15 @@ function symmetric_environment(
     # find the left fixed point of the generalized left transfer matrix
     Q0 = MPSKit.randomize!(similar(N, space(W, 1) ← space(N, 1)))
     λ, Q = MPSKit.fixedpoint(gen_transfer_left(N, W, Up0), Q0, :LM; tol=tol_eigs)
-    u, _, v = svd(Q)
+    u, _, v = tsvd(Q)
     Q = u * v
 
     # if the leading eigenvalue is not a phase, iteratively update the physical map until it is
     iter = 0
     Up = Up0
     while !isapprox(abs(λ), 1.0; atol=tol_conv) && iter < maxiter
+        @warn "We shouldn't be here, probably something went wrong..."
+
         iter += 1
         verbosity > 1 && @info "Symmetrization at iter=$iter: abs(λ)=$(abs(λ))"
 
@@ -437,7 +435,7 @@ function symmetric_environment(
     end
     verbosity > 0 && @info "Symmetrization terminated at iter=$iter with abs(λ)=$(abs(λ))"
 
-    u, _, v = svd(Q)
+    u, _, v = tsvd(Q)
     Q = u * v
 
     # absorb the unitary into the corner tensor and update the north and west edges
@@ -491,6 +489,7 @@ function ChainRulesCore.rrule(::typeof(getproperty), e::SymmetricEnv, name::Symb
     result = getproperty(e, name)
     if name === :X
         function corner_pullback(ΔX)
+            ΔX = unthunk(ΔX)
             return NoTangent(),
             SymmetricEnv(ΔX, zerovector(e.A), zerovector(e.U)),
             NoTangent()
@@ -498,13 +497,15 @@ function ChainRulesCore.rrule(::typeof(getproperty), e::SymmetricEnv, name::Symb
         return result, corner_pullback
     elseif name === :A
         function edge_pullback(ΔA)
+            ΔA = unthunk(ΔA)
             return NoTangent(),
             SymmetricEnv(zerovector(e.X), ΔA, zerovector(e.U)),
             NoTangent()
         end
         return result, edge_pullback
     elseif name === :U
-        function flip_pullback(ΔU) # TODO: this does not make sense at all, we should only ever get a ZeroTangent here...
+        function flip_pullback(ΔU)
+            ΔU = unthunk(ΔU) # TODO: make sure we never get here in the first place...
             return NoTangent(),
             SymmetricEnv(zerovector(e.X), zerovector(e.A), ΔU),
             NoTangent()

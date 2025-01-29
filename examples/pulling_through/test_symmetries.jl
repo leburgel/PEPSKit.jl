@@ -27,7 +27,7 @@ P = O[1]
 
 pt_state = InfinitePartitionFunction(P)
 pt_envinit = PullingThroughEnv(pt_state, ℂ^χ)
-pt_alg = PullingThrough(; tol=1e-10, maxiter=100, verbosity=3, dynamic_tols=false)
+pt_alg = PullingThrough(; tol=1e-10, maxiter=200, verbosity=3)
 
 # run pure contraction, not 
 pt_env, pt_λ, = PEPSKit.pulling_through_iterate(pt_envinit, pt_state, pt_alg)
@@ -99,6 +99,7 @@ X2´ = MPSKit.transfer_left(X^2, A, A)
 
 @show norm(LHS2 - λ_out * RHS)
 # works, so we should just pretend this is enough?
+# don't need to include hermiticity in fixed-point equations?
 
 # TODO: should we actually think of X as real for the fixed point equations, or not?
 # TODO: add a PEPS test

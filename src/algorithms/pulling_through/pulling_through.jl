@@ -13,8 +13,8 @@ Pulling-through contraction algorithm.
     finalize::F = Defaults._finalize
 
     dynamic_tols::Bool = true
-    alg_gauge = MPSKit.Defaults.alg_gauge(; verbosity=1, maxiter=100, dynamic_tols)
-    alg_eigsolve = MPSKit.Defaults.alg_eigsolve(; ishermitian=false, dynamic_tols)
+    alg_gauge = MPSKit.Defaults.alg_gauge(; verbosity=1, maxiter=100, tol=1e-14, tol_factor=1e-8, dynamic_tols)
+    alg_eigsolve = MPSKit.Defaults.alg_eigsolve(; ishermitian=false, tol=1e-14, tol_factor=1e-6, dynamic_tols)
 end
 
 #

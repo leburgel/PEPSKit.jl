@@ -70,9 +70,7 @@ pt_errs = Float64[]
 pt_state = InfinitePartitionFunction(P)
 pt_envinit = PullingThroughEnv(pt_state, ℂ^χ)
 pt_finalize = pt_error_tracker(pt_errs, pt_envinit)
-pt_alg = PullingThrough(;
-    tol=1e-12, maxiter=200, verbosity=2, finalize=pt_finalize, dynamic_tols=false
-)
+pt_alg = PullingThrough(; tol=1e-12, maxiter=200, verbosity=2, finalize=pt_finalize)
 
 pt_env, pt_λ, = leading_boundary(pt_envinit, pt_state, pt_alg)
 pt_λ = abs(pt_λ)
