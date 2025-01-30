@@ -37,7 +37,7 @@ pt_λ = abs(pt_λ)
 # Symmetrize
 #
 
-symm_env, W = PEPSKit.symmetric_environment(pt_env)
+symm_env, Up, W, λ_transfer = PEPSKit.symmetric_environment(pt_env)
 
 #
 # Test the symmetries
@@ -45,10 +45,9 @@ symm_env, W = PEPSKit.symmetric_environment(pt_env)
 
 X = symm_env.X
 A = symm_env.A
-Up = symm_env.U
 
 # check if we actually made N equal to W
-ovlp = tr(A' * PEPSKit.apply_physical_operator(W, Up')) / (norm(A) * norm(W))
+ovlp = tr(A' * PEPSKit.apply_physical_unitary(W, Up')) / (norm(A) * norm(W))
 @show abs(ovlp)
 
 ## Check the fixed point equations
@@ -57,7 +56,7 @@ ovlp = tr(A' * PEPSKit.apply_physical_operator(W, Up')) / (norm(A) * norm(W))
 @show tr(X^4)
 
 # check if A is hermitian
-Ā = PEPSKit.apply_physical_operator(PEPSKit._conj(A), Up')
+Ā = PEPSKit.apply_physical_unitary(PEPSKit._conj(A), Up')
 @show norm(A - Ā)
 
 # check the left fixed point of the transfer matrix

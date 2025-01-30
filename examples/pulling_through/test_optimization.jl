@@ -25,17 +25,17 @@ H = heisenberg_XYZ(InfiniteSquare(); Jx=-1, Jy=1, Jz=-1)
 
 # Parameters
 χbond = 2 # TODO: play around with this...
-χenv = 20 # TODO: can't use too large environment bond dimensions for small PEPS bond dimensions/very gapped states?
+χenv = 12 # TODO: can't use too large environment bond dimensions for small PEPS bond dimensions/very gapped states?
 symm = MyRotateReflect()
 pt_alg = PullingThrough(; tol=1e-10, verbosity=2, maxiter=500)
 opt_alg = PEPSOptimize(;
     boundary_alg=pt_alg,
-    optimizer=LBFGS(4; maxiter=100, gradtol=1e-4, verbosity=2),
+    optimizer=LBFGS(4; maxiter=100, gradtol=1e-4, verbosity=3, ls_maxiter=2, ls_maxfg=4),
     gradient_alg=LinSolver(;
         solver=KrylovKit.GMRES(;
-            maxiter=PEPSKit.Defaults.fpgrad_maxiter,
+            maxiter=30,
             tol=PEPSKit.Defaults.fpgrad_tol,
-            verbosity=1,
+            verbosity=2,
         ),
         iterscheme=:real, # toggle between :real and :complex
     ),

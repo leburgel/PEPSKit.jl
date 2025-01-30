@@ -164,8 +164,8 @@ end
 function CTMRGEnv(env::SymmetricEnv{C,T}) where {C,T}
     TN = env.A
     TE = env.A
-    TS = apply_physical_operator(env.A, env.U)
-    TW = apply_physical_operator(env.A, env.U)
+    TS = physical_flip(env.A)
+    TW = physical_flip(env.A)
 
     Ts = [TN, TE, TS, TW]
     Cs = [env.X, env.X, env.X, env.X]
@@ -201,84 +201,106 @@ function _rrule(
         ∂alg = NoTangent()
 
         Δenv = unthunk(ΔX[1])
-        ΔN = unthunk(ΔX[2]) # this one is always ZeroTangent, which makes sense
-        # the only problem is I don't know how to handle it...
+        ΔN = unthunk(ΔX[2]) # this one is always ZeroTangent for now, which makes sense
 
-        # attempt 1: adjoint of norm is a ZeroTangent
-        if ΔN isa AbstractZero
-            # find partial gradients of pulling through fixed-point equation,
-            # but hack to consider the eigenvalue a constant...
-            f_ez(A, env) = pt_fixedpoint(Val(F), A, env, N, env.U)[1]
+        # # attempt 1: short-circuit if adjoint of eignevalue is a ZeroTangent
+        # if ΔN isa AbstractZero
+        #     # find partial gradients of pulling through fixed-point equation,
+        #     # but dirty hackhack to consider the eigenvalue a constant...
+        #     f_ez(state, env) = pt_fixedpoint(Val(F), state, env, N)[1]
+
+        #     # DEBUGGING
+        #     fps = pt_fixedpoint(Val(F), state, env, N)
+        #     nrm = sum(norm.(fps))
+        #     nrm < alg.tol ||
+        #         @warn "Fixed-point equations not satisfied, still using the gradient: $nrm"
+
+        #     _, fp_pullbacks_ez = rrule_via_ad(config, f_ez, state, env)
+
+        #     ∂f∂A_ez(x)::typeof(state) = fp_pullbacks_ez(x)[2]
+        #     ∂f∂x_ez(x)::typeof(env) = fp_pullbacks_ez(x)[3]
+        #     ∂state = pt_fpgrad(Δenv, ∂f∂x_ez, ∂f∂A_ez, Δenv, gradmode)
+
+        #     return ∂self, ∂env₀, ∂state, ∂alg
+        # else
+            # @warn "We shouldn't be here for now..."
+
+            # okay, have a go at the general case...
+
+            # retry inspired by
+            # https://github.com/tangwei94/AD4vumps.jl/blob/main/src/vumps.jl
+
+            # ΔN = isa(ΔN, ZeroTangent) ? zero(N) : ΔN # don't actually need this?
 
             # DEBUGGING
-            fps = pt_fixedpoint(Val(F), state, env, N, env.U)
+            fps = pt_fixedpoint(Val(F), state, env, N)
             nrm = sum(norm.(fps))
             nrm < alg.tol ||
                 @warn "Fixed-point equations not satisfied, still using the gradient: $nrm"
 
-            _, fp_pullbacks_ez = rrule_via_ad(config, f_ez, state, env)
-
-            ∂f∂A_ez(x)::typeof(state) = fp_pullbacks_ez(x)[2]
-            ∂f∂x_ez(x)::typeof(env) = fp_pullbacks_ez(x)[3]
-            ∂state = pt_fpgrad(Δenv, ∂f∂x_ez, ∂f∂A_ez, Δenv, gradmode)
-
-            return ∂self, ∂env₀, ∂state, ∂alg
-        else
-            @warn "We shouldn't be here for now..."
-            # TODO: figure out how to handle the general case
-
             # find partial gradients of pulling through fixed-point equation
-            f_hrd(A, (env, N)) = pt_fixedpoint(Val(F), A, env, N, env.U)
-            _, fp_pullbacks_hrd = rrule_via_ad(config, f_hrd, state, (env, N))
+            f_hrd(state, env, N) = pt_fixedpoint(Val(F), state, env, N)
+            _, pt_vjp = pullback(f_hrd, state, env, N)
 
-            ∂f∂A_hrd(x)::typeof(state) = fp_pullbacks_hrd(x)[2]
-            # ∂f∂x(x)::typeof((Δenv, ΔN)) = fp_pullbacks(x)[3]
-            ∂f∂x_hrd(x) = fp_pullbacks_hrd(x)[3] # TODO: fix issues with the output type conversion
-            ∂state = pt_fpgrad((Δenv, ΔN), ∂f∂x_hrd, ∂f∂A_hrd, (Δenv, ΔN), gradmode)
+            function vjp_envN_envN(x)
+                Δenv = project_hermitian(x[1]) # TODO: project ΔA to be hermitian?
+                xo = pt_vjp((Δenv, x[2]))
+                Δenvo = project_hermitian(xo[2]) # TODO: project ΔA to be hermitian?
+                return (Δenvo, xo[3])
+            end
+            vjp_envN_state(x) = pt_vjp(x)[1]
+
+            X1 = (Δenv, ΔN)
+            # X1 = vjp_envN_envN((Δenv, ΔN)) # TODO: using this instead? why though?
+
+            ∂state = pt_fpgrad(X1, vjp_envN_envN, vjp_envN_state, X1, gradmode)
 
             return ∂self, ∂env₀, ∂state, ∂alg
-        end
+        # end
     end
 
     return (env, N, ϵ), leading_boundary_real_pullback
 end
 
-function pt_fixedpoint(::Val{:real}, A, x, N, U)
-    O = _local_sandwich(A)
-
+function pt_fixedpoint(::Val{:real}, state, env, N)
+    O = _local_sandwich(state)
+    A = env.A
+    X = env.X
     # dA
-    dA = fp_transfer_west(Val(:real), x.A, x.X, U, O) - N * absorb_bond_matrix(x.A, x.X)
+    dA = fp_transfer_west(Val(:real), A, X, O) - N * absorb_bond_matrix(A, X)
 
     # dX
-    dX = MPSKit.transfer_left(x.X^2, x.A, x.A) - x.X^2
+    dX = MPSKit.transfer_left(X^2, A, A) - X^2
 
     # dN
-    dN = abs(tr(x.X^4)) - one(scalartype(x.X))
+    dN = abs(tr(X^4)) - one(scalartype(X))
 
     # group and return
-    return SymmetricEnv(dX, dA, U), dN
+    return SymmetricEnv(dX, dA), dN # TODO: will things be easier if I just keep X and A separate?
 end
-function pt_fixedpoint(::Val{:complex}, A, x, N, U)
-    O = _local_sandwich(A)
+function pt_fixedpoint(::Val{:complex}, state, env, N)
+    O = _local_sandwich(state)
+    A = env.A
+    X = env.X
 
     # dA
-    dA = fp_transfer_west(Val(:complex), x.A, x.X, U, O) - N * absorb_bond_matrix(x.A, x.X)
+    dA = fp_transfer_west(Val(:complex), A, X, O) - N * absorb_bond_matrix(A, X)
 
     # dX
-    dX = MPSKit.transfer_left(x.X' * x.X, x.A, x.A) - x.X' * x.X
+    dX = MPSKit.transfer_left(X' * X, A, A) - X' * X
 
     # dN
-    dN = abs(tr(x.X^4)) - one(scalartype(x.X))
+    dN = abs(tr(X^4)) - one(scalartype(X))
 
     # group and return
-    return SymmetricEnv(dX, dA, U), dN
+    return SymmetricEnv(dX, dA), dN
 end
 
 function pt_fpgrad(Δx, ∂f∂x, ∂f∂A, y₀, alg::LinSolver)
-    y, info = linsolve(∂f∂x, Δx, y₀, alg.solver)
+    y, info = reallinsolve(∂f∂x, Δx, y₀, alg.solver) # does not converge at all...
     if alg.solver.verbosity > 0 && info.converged != 1
         @warn("gradient fixed-point iteration reached maximal number of iterations:", info)
     end
 
-    return -∂f∂A(y)
+    return (-1) * ∂f∂A(y) # TODO: did I get the sign right here?
 end

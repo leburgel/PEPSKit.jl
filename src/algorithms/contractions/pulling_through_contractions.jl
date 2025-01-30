@@ -27,10 +27,9 @@ function fp_transfer_west(
     ::Val{:real},
     A::MPSKit.GenericMPSTensor{S,3},
     X::MPSKit.MPSBondTensor{S},
-    U::SquareTensorMap{S,2},
     O::PEPSSandwich,
 ) where {S}
-    AU = PEPSKit.apply_physical_operator(A, U)
+    AU = physical_flip(A)
     @autoopt @tensor A´[χ_SE D_E_above D_E_below; χ_NE] :=
         A[χ_NNW D_N_above D_N_below; χ_NE] *
         AU[χ_WSW D_W_above D_W_below; χ_WNW] *
@@ -39,16 +38,15 @@ function fp_transfer_west(
         X[χ_SSW; χ_WSW] *
         ket(O)[d; D_N_above D_E_above D_S_above D_W_above] *
         conj(bra(O)[d; D_N_below D_E_below D_S_below D_W_below])
-    return apply_physical_operator(A´, U') # restore original space...
+    return physical_flip(A´) # restore original space...
 end
 function fp_transfer_west(
     ::Val{:complex},
     A::MPSKit.GenericMPSTensor{S,3},
     X::MPSKit.MPSBondTensor{S},
-    U::SquareTensorMap{S,2},
     O::PEPSSandwich,
 ) where {S}
-    AU = PEPSKit.apply_physical_operator(A, U)
+    AU = physical_flip(A)
     @autoopt @tensor A´[χ_SE D_E_above D_E_below; χ_NE] :=
         A[χ_NNW D_N_above D_N_below; χ_NE] *
         AU[χ_WSW D_W_above D_W_below; χ_WNW] *
@@ -57,7 +55,7 @@ function fp_transfer_west(
         X'[χ_SSW; χ_WSW] *
         ket(O)[d; D_N_above D_E_above D_S_above D_W_above] *
         conj(bra(O)[d; D_N_below D_E_below D_S_below D_W_below])
-    return apply_physical_operator(A´, U') # restore original space...
+    return physical_flip(A´) # restore original space...
 end
 
 # partition function contractions
@@ -94,7 +92,7 @@ function fp_transfer_west(
     U::SquareTensorMap{S,1},
     P::PartitionFunctionTensor,
 ) where {S}
-    AU = PEPSKit.apply_physical_operator(A, U)
+    AU = physical_flip(A)
     @autoopt @tensor A´[χ_SE D_E_above D_E_below; χ_NE] :=
         A[χ_NNW D_N_above D_N_below; χ_NE] *
         AU[χ_WSW D_W_above D_W_below; χ_WNW] *
@@ -103,7 +101,7 @@ function fp_transfer_west(
         X[χ_SSW; χ_WSW] *
         ket(O)[d; D_N_above D_E_above D_S_above D_W_above] *
         conj(bra(O)[d; D_N_below D_E_below D_S_below D_W_below])
-    return apply_physical_operator(A´, U') # restore original space...
+    return physical_flip(A´) # restore original space...
 end
 function fp_transfer_west(
     ::Val{:complex},
@@ -112,7 +110,7 @@ function fp_transfer_west(
     U::SquareTensorMap{S,1},
     P::PartitionFunctionTensor,
 ) where {S}
-    AU = PEPSKit.apply_physical_operator(A, U)
+    AU = physical_flip(A)
     @autoopt @tensor A´[χ_SE D_E; χ_NE] :=
         A[χ_NNW D_N; χ_NE] *
         AU[χ_WSW D_W; χ_WNW] *
@@ -120,7 +118,7 @@ function fp_transfer_west(
         X[χ_WNW; χ_NNW] *
         X'[χ_SSW; χ_WSW] *
         P[D_W D_S; D_N D_E]
-    return apply_physical_operator(A´, U') # restore original space...
+    return physical_flip(A´) # restore original space...
 end
 
 # PEPO contractions: TODO

@@ -311,18 +311,34 @@ function physical_flipper(N::MPSKit.GenericMPSTensor{S,N₁}) where {S,N₁}
     end
     return isomorphism(storagetype(N), PNp, PN)
 end
+@non_differentiable physical_flipper(args...)
 
-@generated function apply_physical_operator(
-    N::MPSKit.GenericMPSTensor{S,N₁}, O::SquareTensorMap{S,N₂}
+@generated function apply_physical_unitary(
+    N::MPSKit.GenericMPSTensor{S,N₁}, U::SquareTensorMap{S,N₂}
 ) where {S,N₁,N₂}
     N_out_e = tensorexpr(:N_out, -(1:N₁), -(N₁ + 1))
     N_e = tensorexpr(:N, (-1, (1:N₂)...), -(N₁ + 1))
-    O_e = tensorexpr(:O, -(2:N₁), (1:N₂))
-    return macroexpand(@__MODULE__, :(return @tensor $N_out_e := $N_e * $O_e))
+    U_e = tensorexpr(:U, -(2:N₁), (1:N₂))
+    return macroexpand(@__MODULE__, :(return @tensor $N_out_e := $N_e * $U_e))
 end
 
-function physical_flip(N::MPSKit.GenericMPSTensor{S,N₁}) where {S,N₁}
-    return apply_physical_operator(N, physical_flipper(N))
+function physical_flip(A::MPSKit.GenericMPSTensor{S,N₁}) where {S,N₁}
+    return apply_physical_unitary(A, physical_flipper(A))
+end
+
+# short-circuit this
+function ChainRulesCore.rrule(::typeof(physical_flip), A::MPSKit.GenericMPSTensor)
+    Ap = physical_flip(A)
+
+    function physical_flip_pullback(ΔAp)
+        ΔAp = unthunk(ΔAp)
+        return NoTangent(), physical_flip(ΔAp)
+    end
+    return Ap, physical_flip_pullback
+end
+
+function ChainRulesCore.rrule(::typeof(physical_flipper), N::MPSKit.GenericMPSTensor{S,N₁}) where {S,N₁}
+    return N, ΔN -> (ΔN,)
 end
 
 # trying to optimize the unitary flipper, and failing
@@ -372,16 +388,11 @@ end
 #
 
 """
-    struct SymmetricEnv{C,T,P}
+    struct SymmetricEnv{C,T}
 """
-struct SymmetricEnv{C<:MPSKit.MPSBondTensor,T<:MPSKit.GenericMPSTensor,P<:SquareTensorMap}
+struct SymmetricEnv{C<:MPSKit.MPSBondTensor,T<:MPSKit.GenericMPSTensor}
     X::C
     A::T
-    U::P
-end
-
-function SymmetricEnv(X::MPSKit.MPSBondTensor, A::MPSKit.GenericMPSTensor)
-    return SymmetricEnv(X, A, physical_flipper(A))
 end
 
 # all the tricks to symmetrize the environment
@@ -415,9 +426,9 @@ function symmetric_environment(
     # if the leading eigenvalue is not a phase, iteratively update the physical map until it is
     iter = 0
     Up = Up0
-    while !isapprox(abs(λ), 1.0; atol=tol_conv) && iter < maxiter
-        @warn "We shouldn't be here, probably something went wrong..."
 
+    isapprox(abs(λ), 1.0; atol=tol_conv) || @warn "Requiring physical unitary other than the spaceflip, probably something went wrong"
+    while !isapprox(abs(λ), 1.0; atol=tol_conv) && iter < maxiter
         iter += 1
         verbosity > 1 && @info "Symmetrization at iter=$iter: abs(λ)=$(abs(λ))"
 
@@ -451,37 +462,39 @@ function symmetric_environment(
 
     # impose hermiticity on Nm
     Nm_dag = _conj(Nm)
-    N̄m = apply_physical_operator(Nm_dag, Up') # is this actually what we want to do?
+    N̄m = physical_flip(Nm_dag) # we probably want to apply the actual physical unitary if there is one...
     Nm = (Nm + N̄m) / 2
     Nm = normalize_mps(Nm)
 
-    return SymmetricEnv(Xm, Nm, Up), Wm, λ
+    return SymmetricEnv(Xm, Nm), Up, Wm, λ
 end
 
 function Base.complex(env::SymmetricEnv)
-    return SymmetricEnv(complex(env.X), complex(env.A), complex(env.U))
+    return SymmetricEnv(complex(env.X), complex(env.A))
 end
 
 # to be able to start iterating again with a symmetrized initial guess
 function PullingThroughEnv(env::SymmetricEnv)
     # flip west, seed gauging matrices with corner tensor
     return PullingThroughEnv(
-        env.A, apply_physical_operator(env.A, env.U); LN=env.X, RW=env.X
+        env.A, physical_flip(env.A); LN=env.X, RW=env.X
     )
 end
 
 # In-place update of environment
-function update!(env::SymmetricEnv{C,T,P}, env´::SymmetricEnv{C,T,P}) where {C,T,P}
+function update!(env::SymmetricEnv{C,T}, env´::SymmetricEnv{C,T}) where {C,T}
     copy!(env.A, env´.A)
     copy!(env.X, env´.X)
-    copy!(env.U, env´.U)
     return env
 end
 
 # Custom adjoint for SymmetricEnv constructor, needed for fixed-point differentiation
-function ChainRulesCore.rrule(::Type{SymmetricEnv}, X, A, U)
-    symmetricenv_pullback(Δenv) = NoTangent(), Δenv.X, Δenv.A, Δenv.U
-    return SymmetricEnv(X, A, U), symmetricenv_pullback
+function ChainRulesCore.rrule(::Type{SymmetricEnv}, X, A)
+    function symmetricenv_pullback(Δenv)
+        Δenv = unthunk(Δenv)
+        return NoTangent(), Δenv.X, Δenv.A
+    end
+    return SymmetricEnv(X, A), symmetricenv_pullback
 end
 
 # Custom adjoint for SymmetricEnv getproperty, to avoid creating named tuples in backward pass
@@ -491,7 +504,7 @@ function ChainRulesCore.rrule(::typeof(getproperty), e::SymmetricEnv, name::Symb
         function corner_pullback(ΔX)
             ΔX = unthunk(ΔX)
             return NoTangent(),
-            SymmetricEnv(ΔX, zerovector(e.A), zerovector(e.U)),
+            SymmetricEnv(ΔX, zerovector(e.A)),
             NoTangent()
         end
         return result, corner_pullback
@@ -499,18 +512,10 @@ function ChainRulesCore.rrule(::typeof(getproperty), e::SymmetricEnv, name::Symb
         function edge_pullback(ΔA)
             ΔA = unthunk(ΔA)
             return NoTangent(),
-            SymmetricEnv(zerovector(e.X), ΔA, zerovector(e.U)),
+            SymmetricEnv(zerovector(e.X), ΔA),
             NoTangent()
         end
         return result, edge_pullback
-    elseif name === :U
-        function flip_pullback(ΔU)
-            ΔU = unthunk(ΔU) # TODO: make sure we never get here in the first place...
-            return NoTangent(),
-            SymmetricEnv(zerovector(e.X), zerovector(e.A), ΔU),
-            NoTangent()
-        end
-        return result, flip_pullback
     else
         # this should never happen because already errored in forwards pass
         throw(ArgumentError("No rrule for getproperty of $name"))
@@ -521,14 +526,14 @@ end
 
 # Functions used for FP differentiation and by KrylovKit.linsolve
 function Base.:+(e₁::SymmetricEnv, e₂::SymmetricEnv)
-    return SymmetricEnv(e₁.X + e₂.X, e₁.A + e₂.A, e₁.U)
+    return SymmetricEnv(e₁.X + e₂.X, e₁.A + e₂.A)
 end
 function Base.:-(e₁::SymmetricEnv, e₂::SymmetricEnv)
-    return SymmetricEnv(e₁.X - e₂.X, e₁.A - e₂.A, e₁.U)
+    return SymmetricEnv(e₁.X - e₂.X, e₁.A - e₂.A)
 end
-Base.:*(α::Number, e::SymmetricEnv) = SymmetricEnv(α * e.X, α * e.A, e.U)
+Base.:*(α::Number, e::SymmetricEnv) = SymmetricEnv(α * e.X, α * e.A)
 Base.:*(e::SymmetricEnv, α::Number) = α * e
-Base.similar(e::SymmetricEnv) = SymmetricEnv(similar(e.X), similar(e.A), e.U)
+Base.similar(e::SymmetricEnv) = SymmetricEnv(similar(e.X), similar(e.A))
 
 function LinearAlgebra.mul!(edst::SymmetricEnv, esrc::SymmetricEnv, α::Number)
     mul!(edst.X, esrc.X, α)
@@ -567,16 +572,15 @@ end
 
 import VectorInterface as VI
 
-function VI.scalartype(::Type{SymmetricEnv{C,T,P}}) where {C,T,P}
+function VI.scalartype(::Type{SymmetricEnv{C,T}}) where {C,T}
     S₁ = scalartype(C)
     S₂ = scalartype(T)
-    S₃ = scalartype(P)
-    return promote_type(S₁, S₂, S₃)
+    return promote_type(S₁, S₂)
 end
 
 function VI.zerovector(env::SymmetricEnv, ::Type{S}) where {S<:Number}
     _zerovector = Base.Fix2(zerovector, S)
-    return SymmetricEnv(_zerovector(env.X), _zerovector(env.A), env.U)
+    return SymmetricEnv(_zerovector(env.X), _zerovector(env.A))
 end
 function VI.zerovector!(env::SymmetricEnv)
     zerovector!(env.X)
@@ -587,7 +591,7 @@ VI.zerovector!!(env::SymmetricEnv) = zerovector!(env)
 
 function VI.scale(env::SymmetricEnv, α::Number)
     _scale = Base.Fix2(scale, α)
-    return SymmetricEnv(_scale(env.X), _scale(env.A), env.U)
+    return SymmetricEnv(_scale(env.X), _scale(env.A))
 end
 function VI.scale!(env::SymmetricEnv, α::Number)
     _scale! = Base.Fix2(scale!, α)
@@ -606,7 +610,7 @@ VI.scale!!(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number) = scale!(env�
 
 function VI.add(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number, β::Number)
     _add(x, y) = add(x, y, α, β)
-    return SymmetricEnv(_add(env₁.X, env₂.X), _add(env₁.A, env₂.A), env₁.U)
+    return SymmetricEnv(_add(env₁.X, env₂.X), _add(env₁.A, env₂.A))
 end
 function VI.add!(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number, β::Number)
     _add!(x, y) = add!(x, y, α, β)
@@ -623,3 +627,12 @@ function VI.inner(env₁::SymmetricEnv, env₂::SymmetricEnv)
     return inner((env₁.X, env₁.A), (env₂.X, env₂.A))
 end
 VI.norm(env::SymmetricEnv) = norm((env.X, env.A))
+
+function  project_hermitian(A::MPSKit.GenericMPSTensor)
+    A´ = (A + physical_flip(_conj(A))) / 2
+    # A´ = normalize_mps(A´)
+    return A´
+end
+function project_hermitian(env::SymmetricEnv)
+    return SymmetricEnv(env.X, project_hermitian(env.A))
+end
