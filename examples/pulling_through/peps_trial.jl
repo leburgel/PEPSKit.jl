@@ -3,6 +3,9 @@ Compare contraction methods for an optimized PEPS ground state of the 2+1D trans
 Ising model.
 """
 
+# TODO: do some more in-depth tests using a filtered PEPS with controllable correlation
+# length
+
 using Pkg: Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
 
@@ -61,6 +64,18 @@ vumps_finalize = vumps_error_tracker(vumps_errs, vumps_env_init)
 vumps_alg = VUMPS(; tol=1e-12, maxiter=200, verbosity=2, finalize=vumps_finalize)
 
 vumps_env, vumps_env_env, = leading_boundary(vumps_env_init, vumps_state, vumps_alg)
+
+## Gradient Grassmann
+
+gg_errs = Float64[]
+gg_state = InfiniteTransferPEPS(InfinitePEPS(t), 1, 1)
+gg_env_init = initializeMPS(gg_state, [ℂ^χ])
+gg_finalize! = gg_error_tracker(gg_errs, gg_env_init)
+gg_alg = GradientGrassmann(;
+    tol=1e-12, maxiter=200, verbosity=2, (finalize!)=(gg_finalize!)
+)
+
+gg_env, gg_env_env, = leading_boundary(gg_env_init, gg_state, gg_alg)
 
 ## Pulling through
 

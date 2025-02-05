@@ -77,6 +77,22 @@ function LinSolver(;
 end
 
 """
+    struct LSSolver(; solver=KrylovKit.GMRES(), iterscheme=Defaults.iterscheme) <: GradMode{iterscheme}
+
+Gradient mode wrapper around `KrylovKit.LeastSquaresSolver` for solving the gradient linear
+problem using iterative solvers.
+"""
+struct LSSolver{F} <: GradMode{F}
+    solver::KrylovKit.LeastSquaresSolver
+end
+function LSSolver(;
+    solver=KrylovKit.LSMR(; maxiter=Defaults.fpgrad_maxiter, tol=Defaults.fpgrad_tol),
+    iterscheme=:rectangular,
+)
+    return LSSolver{iterscheme}(solver)
+end
+
+"""
     PEPSOptimize{G}(; boundary_alg=Defaults.ctmrg_alg, optimizer::OptimKit.OptimizationAlgorithm=Defaults.optimizer
                     reuse_env::Bool=true, gradient_alg::G=Defaults.gradient_alg)
 

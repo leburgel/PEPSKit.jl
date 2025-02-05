@@ -337,7 +337,9 @@ function ChainRulesCore.rrule(::typeof(physical_flip), A::MPSKit.GenericMPSTenso
     return Ap, physical_flip_pullback
 end
 
-function ChainRulesCore.rrule(::typeof(physical_flipper), N::MPSKit.GenericMPSTensor{S,N₁}) where {S,N₁}
+function ChainRulesCore.rrule(
+    ::typeof(physical_flipper), N::MPSKit.GenericMPSTensor{S,N₁}
+) where {S,N₁}
     return N, ΔN -> (ΔN,)
 end
 
@@ -427,12 +429,13 @@ function symmetric_environment(
     iter = 0
     Up = Up0
 
-    isapprox(abs(λ), 1.0; atol=tol_conv) || @warn "Requiring physical unitary other than the spaceflip, probably something went wrong"
+    isapprox(abs(λ), 1.0; atol=tol_conv) ||
+        @warn "Requiring physical unitary other than the spaceflip, probably something went wrong"
     while !isapprox(abs(λ), 1.0; atol=tol_conv) && iter < maxiter
         iter += 1
         verbosity > 1 && @info "Symmetrization at iter=$iter: abs(λ)=$(abs(λ))"
 
-        # proper optimization update, 'works' but don't know if the result is any good
+        # proper optimization update, 'works' but don't know if the result is any good...
         Up, = optimize(
             get_unitary_costfun(Q, N, W),
             Up,
@@ -450,7 +453,7 @@ function symmetric_environment(
     Q = u * v
 
     # absorb the unitary into the corner tensor and update the north and west edges
-    Xm, V, = schur(Q' * X)
+    Xm, V, = schur(Q' * X) # TODO: figure out purely imaginary Xm?
     Nm = absorb_bond_unitary(N, V')
     Wm = absorb_bond_unitary(W, (Q * V)')
 
@@ -458,11 +461,11 @@ function symmetric_environment(
     λ, = MPSKit.fixedpoint(gen_transfer_left(Nm, Wm, Up), Q, :LM; tol=tol_eigs)
 
     # impose normalization on X
-    Xm = Xm / (tr(Xm^4)^(1 / 4))
+    Xm = Xm / (tr(Xm^4)^(1 / 4)) # TODO: daggers or not?
 
     # impose hermiticity on Nm
     Nm_dag = _conj(Nm)
-    N̄m = physical_flip(Nm_dag) # we probably want to apply the actual physical unitary if there is one...
+    N̄m = physical_flip(Nm_dag) # TODO: we probably want to apply the actual physical unitary if there is one...
     Nm = (Nm + N̄m) / 2
     Nm = normalize_mps(Nm)
 
@@ -476,9 +479,7 @@ end
 # to be able to start iterating again with a symmetrized initial guess
 function PullingThroughEnv(env::SymmetricEnv)
     # flip west, seed gauging matrices with corner tensor
-    return PullingThroughEnv(
-        env.A, physical_flip(env.A); LN=env.X, RW=env.X
-    )
+    return PullingThroughEnv(env.A, physical_flip(env.A); LN=env.X, RW=env.X)
 end
 
 # In-place update of environment
@@ -490,11 +491,12 @@ end
 
 # Custom adjoint for SymmetricEnv constructor, needed for fixed-point differentiation
 function ChainRulesCore.rrule(::Type{SymmetricEnv}, X, A)
+    env = SymmetricEnv(X, A)
     function symmetricenv_pullback(Δenv)
         Δenv = unthunk(Δenv)
         return NoTangent(), Δenv.X, Δenv.A
     end
-    return SymmetricEnv(X, A), symmetricenv_pullback
+    return env, symmetricenv_pullback
 end
 
 # Custom adjoint for SymmetricEnv getproperty, to avoid creating named tuples in backward pass
@@ -503,17 +505,13 @@ function ChainRulesCore.rrule(::typeof(getproperty), e::SymmetricEnv, name::Symb
     if name === :X
         function corner_pullback(ΔX)
             ΔX = unthunk(ΔX)
-            return NoTangent(),
-            SymmetricEnv(ΔX, zerovector(e.A)),
-            NoTangent()
+            return NoTangent(), SymmetricEnv(ΔX, zerovector(e.A)), NoTangent()
         end
         return result, corner_pullback
     elseif name === :A
         function edge_pullback(ΔA)
             ΔA = unthunk(ΔA)
-            return NoTangent(),
-            SymmetricEnv(zerovector(e.X), ΔA),
-            NoTangent()
+            return NoTangent(), SymmetricEnv(zerovector(e.X), ΔA), NoTangent()
         end
         return result, edge_pullback
     else
@@ -521,8 +519,6 @@ function ChainRulesCore.rrule(::typeof(getproperty), e::SymmetricEnv, name::Symb
         throw(ArgumentError("No rrule for getproperty of $name"))
     end
 end
-
-## TODO: make the symmetric pulling through environments play nice with Zygote and VectorInterface...
 
 # Functions used for FP differentiation and by KrylovKit.linsolve
 function Base.:+(e₁::SymmetricEnv, e₂::SymmetricEnv)
@@ -627,12 +623,3 @@ function VI.inner(env₁::SymmetricEnv, env₂::SymmetricEnv)
     return inner((env₁.X, env₁.A), (env₂.X, env₂.A))
 end
 VI.norm(env::SymmetricEnv) = norm((env.X, env.A))
-
-function  project_hermitian(A::MPSKit.GenericMPSTensor)
-    A´ = (A + physical_flip(_conj(A))) / 2
-    # A´ = normalize_mps(A´)
-    return A´
-end
-function project_hermitian(env::SymmetricEnv)
-    return SymmetricEnv(env.X, project_hermitian(env.A))
-end

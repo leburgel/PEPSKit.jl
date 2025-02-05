@@ -61,4 +61,14 @@ function vumps_error_tracker(errs::Vector{Float64}, envinit=nothing)
     return finalize
 end
 
+function gg_error_tracker(errs::Vector{Float64}, envinit=nothing)
+    tracker = StateTracker(envinit)
+    function finalize!(ψ, f, g, numiter)
+        ϵ = get_error!(ψ, tracker)
+        push!(errs, ϵ)
+        return ψ, f, g
+    end
+    return finalize!
+end
+
 const pt_error_tracker = ctm_error_tracker # same finalize signature

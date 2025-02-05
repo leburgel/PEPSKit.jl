@@ -64,6 +64,19 @@ vumps_alg = VUMPS(; tol=1e-12, maxiter=200, verbosity=2, finalize=vumps_finalize
 vumps_env, vumps_env_env, = leading_boundary(vumps_envinit, vumps_state, vumps_alg)
 vumps_λ = abs(expectation_value(vumps_env, vumps_state, vumps_env_env))
 
+## Gradient Grassmann
+
+gg_errs = Float64[]
+gg_state = O
+gg_envinit = InfiniteMPS(randn, ComplexF64, [ℂ^2], [ℂ^12])
+gg_finalize! = gg_error_tracker(gg_errs, gg_envinit)
+gg_alg = GradientGrassmann(;
+    tol=1e-12, maxiter=200, verbosity=2, (finalize!)=(gg_finalize!)
+)
+
+gg_env, gg_env_env, = leading_boundary(gg_envinit, gg_state, gg_alg)
+gg_λ = abs(expectation_value(gg_env, gg_state, gg_env_env))
+
 ## Pulling through
 
 pt_errs = Float64[]
@@ -82,6 +95,7 @@ pt_λ = abs(pt_λ)
 f_exact = ising_free_energy(; beta=1 / T)
 @show abs(-log(ctm_λ) * T - f_exact)
 @show abs(-log(vumps_λ) * T - f_exact)
+@show abs(-log(gg_λ) * T - f_exact)
 @show abs(-log(pt_λ) * T - f_exact)
 
 nothing

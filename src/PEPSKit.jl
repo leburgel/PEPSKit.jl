@@ -60,6 +60,7 @@ include("algorithms/toolbox.jl")
 include("algorithms/peps_opt.jl")
 
 include("algorithms/pulling_through/pulling_through.jl")
+include("algorithms/pulling_through/pt_peps_opt.jl")
 
 include("utility/symmetrization.jl")
 
@@ -196,7 +197,7 @@ export FixedSpaceTruncation, HalfInfiniteProjector, FullInfiniteProjector
 export LocalOperator
 export expectation_value, costfun, product_peps, correlation_length
 export leading_boundary
-export PEPSOptimize, GeomSum, ManualIter, LinSolver
+export PEPSOptimize, GeomSum, ManualIter, LinSolver, LSSolver
 export fixedpoint
 
 export absorb_weight
