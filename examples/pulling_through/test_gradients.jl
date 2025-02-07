@@ -31,21 +31,35 @@ symm = MyRotateReflect()
 
 gradtol = 1e-4
 pt_algs = [
-    [PullingThrough(; verbosity=2, maxiter=500)],
-    [PullingThrough(; verbosity=2, maxiter=500)],
+    [PullingThrough(; tol=1e-10, verbosity=2, maxiter=500)],
+    [PullingThrough(; tol=1e-10, verbosity=2, maxiter=500)],
 ]
 gradmodes = [
     [
-        LinSolver(; solver=KrylovKit.GMRES(; tol=gradtol, maxiter=200), iterscheme=:real),
-        LinSolver(; solver=KrylovKit.GMRES(; tol=gradtol, maxiter=200), iterscheme=:complex),
-        LinSolver(; solver=KrylovKit.BiCGStab(; tol=gradtol, maxiter=200), iterscheme=:real),
-        LinSolver(; solver=KrylovKit.BiCGStab(; tol=gradtol, maxiter=200), iterscheme=:complex),
+        # LinSolver(;
+        #     solver=KrylovKit.GMRES(; tol=gradtol, maxiter=200, krylovdim=100),
+        #     iterscheme=:square,
+        # ),
+        # LinSolver(;
+        #     solver=KrylovKit.BiCGStab(; tol=gradtol, maxiter=200), iterscheme=:square
+        # ),
+        LSSolver(;
+            solver=KrylovKit.LSMR(; tol=gradtol, maxiter=200, krylovdim=100),
+            iterscheme=:rectangular,
+        ),
     ],
     [
-        LinSolver(; solver=KrylovKit.GMRES(; tol=gradtol, maxiter=200), iterscheme=:real),
-        LinSolver(; solver=KrylovKit.GMRES(; tol=gradtol, maxiter=200), iterscheme=:complex),
-        LinSolver(; solver=KrylovKit.BiCGStab(; tol=gradtol, maxiter=200), iterscheme=:real),
-        LinSolver(; solver=KrylovKit.BiCGStab(; tol=gradtol, maxiter=200), iterscheme=:complex),
+        # LinSolver(;
+        #     solver=KrylovKit.GMRES(; tol=gradtol, maxiter=200, krylovdim=100),
+        #     iterscheme=:square,
+        # ),
+        # LinSolver(;
+        #     solver=KrylovKit.BiCGStab(; tol=gradtol, maxiter=200), iterscheme=:square
+        # ),
+        LSSolver(;
+            solver=KrylovKit.LSMR(; tol=gradtol, maxiter=200, krylovdim=100),
+            iterscheme=:rectangular,
+        ),
     ],
 ]
 steps = -0.01:0.005:0.01

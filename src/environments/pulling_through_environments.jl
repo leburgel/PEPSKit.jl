@@ -199,22 +199,24 @@ Absorb a bond unitary into an MPS tensor.
 end
 
 """
-    absorb_bond_matrix(A, X)
+    absorb_bond_matrices(A, X1, X2)
 
-Absorb a bond unitary into an MPS tensor.
+Absorb left and right bond matrices into an MPS tensor.
 
 ```
- ←A←  <--  ←X←A←X←
-  ↓           ↓
+ ←A←  <--  ←X1←A←X2←
+  ↓            ↓
 ```
 """
-@generated function absorb_bond_matrix(
-    A::MPSKit.GenericMPSTensor{S,N₁}, X::MPSKit.MPSBondTensor{S}
+@generated function absorb_bond_matrices(
+    A::MPSKit.GenericMPSTensor{S,N₁},
+    X1::MPSKit.MPSBondTensor{S},
+    X2::MPSKit.MPSBondTensor{S},
 ) where {S,N₁}
     A_out_e = tensorexpr(:A_out, -(1:N₁), -(N₁ + 1))
+    XL_e = tensorexpr(:X1, -1, 1)
     A_e = tensorexpr(:A, (1, (-(2:N₁))...), 2)
-    XR_e = tensorexpr(:X, 2, -(N₁ + 1))
-    XL_e = tensorexpr(:X, -1, 1)
+    XR_e = tensorexpr(:X2, 2, -(N₁ + 1))
     return macroexpand(@__MODULE__, :(return @tensor $A_out_e := $XL_e * $A_e * $XR_e))
 end
 

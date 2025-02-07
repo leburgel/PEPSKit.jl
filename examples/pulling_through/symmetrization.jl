@@ -1,5 +1,5 @@
 """
-Simple symmetrization for a single site unit cell.
+Simple symmetrization for a single site unit cell, just to be safe.
 """
 
 using PEPSKit
