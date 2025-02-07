@@ -8,14 +8,14 @@ element-wise converged to `envprev`.
 """
 function gauge_fix(envprev::CTMRGEnv{C,T}, envfinal::CTMRGEnv{C,T}) where {C,T}
     # Check if spaces in envprev and envfinal are the same
-    same_spaces = map(Iterators.product(axes(envfinal.edges)...)) do (dir, r, c)
+    same_spaces = map(eachcoordinate(envfinal, 1:4)) do (dir, r, c)
         space(envfinal.edges[dir, r, c]) == space(envprev.edges[dir, r, c]) &&
             space(envfinal.corners[dir, r, c]) == space(envprev.corners[dir, r, c])
     end
     @assert all(same_spaces) "Spaces of envprev and envfinal are not the same"
 
     # Try the "general" algorithm from https://arxiv.org/abs/2311.11894
-    signs = map(Iterators.product(axes(envfinal.edges)...)) do (dir, r, c)
+    signs = map(eachcoordinate(envfinal, 1:4)) do (dir, r, c)
         # Gather edge tensors and pretend they're InfiniteMPSs
         if dir == NORTH
             Tsprev = circshift(envprev.edges[dir, r, :], 1 - c)
@@ -33,14 +33,12 @@ function gauge_fix(envprev::CTMRGEnv{C,T}, envfinal::CTMRGEnv{C,T}) where {C,T}
 
         # Random MPS of same bond dimension
         M = map(Tsfinal) do t
-            TensorMap(randn, scalartype(t), codomain(t) ← domain(t))
+            randn(scalartype(t), codomain(t) ← domain(t))
         end
 
         # Find right fixed points of mixed transfer matrices
-        ρinit = TensorMap(
-            randn,
-            scalartype(T),
-            MPSKit._lastspace(Tsfinal[end])' ← MPSKit._lastspace(M[end])',
+        ρinit = randn(
+            scalartype(T), MPSKit._lastspace(Tsfinal[end])' ← MPSKit._lastspace(M[end])'
         )
         ρprev = transfermatrix_fixedpoint(Tsprev, M, ρinit)
         ρfinal = transfermatrix_fixedpoint(Tsfinal, M, ρinit)
@@ -70,7 +68,7 @@ end
 
 # Explicit fixing of relative phases (doing this compactly in a loop is annoying)
 function fix_relative_phases(envfinal::CTMRGEnv, signs)
-    corners_fixed = map(Iterators.product(axes(envfinal.corners)...)) do (dir, r, c)
+    corners_fixed = map(eachcoordinate(envfinal, 1:4)) do (dir, r, c)
         if dir == NORTHWEST
             fix_gauge_northwest_corner((r, c), envfinal, signs)
         elseif dir == NORTHEAST
@@ -82,7 +80,7 @@ function fix_relative_phases(envfinal::CTMRGEnv, signs)
         end
     end
 
-    edges_fixed = map(Iterators.product(axes(envfinal.corners)...)) do (dir, r, c)
+    edges_fixed = map(eachcoordinate(envfinal, 1:4)) do (dir, r, c)
         if dir == NORTHWEST
             fix_gauge_north_edge((r, c), envfinal, signs)
         elseif dir == NORTHEAST
@@ -99,7 +97,8 @@ end
 function fix_relative_phases(
     U::Array{Ut,3}, V::Array{Vt,3}, signs
 ) where {Ut<:AbstractTensorMap,Vt<:AbstractTensorMap}
-    U_fixed = map(Iterators.product(axes(U)...)) do (dir, r, c)
+    U_fixed = map(CartesianIndices(U)) do I
+        dir, r, c = I.I
         if dir == NORTHWEST
             fix_gauge_north_left_vecs((r, c), U, signs)
         elseif dir == NORTHEAST
@@ -111,7 +110,8 @@ function fix_relative_phases(
         end
     end
 
-    V_fixed = map(Iterators.product(axes(V)...)) do (dir, r, c)
+    V_fixed = map(CartesianIndices(V)) do I
+        dir, r, c = I.I
         if dir == NORTHWEST
             fix_gauge_north_right_vecs((r, c), V, signs)
         elseif dir == NORTHEAST
@@ -139,30 +139,6 @@ function fix_global_phases(envprev::CTMRGEnv, envfix::CTMRGEnv)
     return CTMRGEnv(cornersgfix, edgesgfix)
 end
 
-function calc_convergence(envs, CSold, TSold)
-    CSnew = map(x -> tsvd(x; alg=TensorKit.SVD())[2], envs.corners)
-    ΔCS = maximum(zip(CSold, CSnew)) do (c_old, c_new)
-        # only compute the difference on the smallest part of the spaces
-        smallest = infimum(MPSKit._firstspace(c_old), MPSKit._firstspace(c_new))
-        e_old = isometry(MPSKit._firstspace(c_old), smallest)
-        e_new = isometry(MPSKit._firstspace(c_new), smallest)
-        return norm(e_new' * c_new * e_new - e_old' * c_old * e_old)
-    end
-
-    TSnew = map(x -> tsvd(x; alg=TensorKit.SVD())[2], envs.edges)
-    ΔTS = maximum(zip(TSold, TSnew)) do (t_old, t_new)
-        MPSKit._firstspace(t_old) == MPSKit._firstspace(t_new) ||
-            return scalartype(t_old)(Inf)
-        return norm(t_new - t_old)
-    end
-
-    @debug "maxᵢ|Cⁿ⁺¹ - Cⁿ|ᵢ = $ΔCS   maxᵢ|Tⁿ⁺¹ - Tⁿ|ᵢ = $ΔTS"
-
-    return max(ΔCS, ΔTS), CSnew, TSnew
-end
-
-@non_differentiable calc_convergence(args...)
-
 """
     calc_elementwise_convergence(envfinal, envfix; atol=1e-6)
 
@@ -181,7 +157,8 @@ function calc_elementwise_convergence(envfinal::CTMRGEnv, envfix::CTMRGEnv; atol
     @debug "maxᵢⱼ|Tⁿ⁺¹ - Tⁿ|ᵢⱼ = $ΔTmax   mean |Tⁿ⁺¹ - Tⁿ|ᵢⱼ = $ΔTmean"
 
     # Check differences for all tensors in unit cell to debug properly
-    for (dir, r, c) in Iterators.product(axes(envfinal.edges)...)
+    for I in CartesianIndices(ΔT)
+        dir, r, c = I.I
         @debug(
             "$((dir, r, c)): all |Cⁿ⁺¹ - Cⁿ|ᵢⱼ < ϵ: ",
             all(x -> abs(x) < atol, convert(Array, ΔC[dir, r, c])),

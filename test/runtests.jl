@@ -20,22 +20,36 @@ end
         @time @safetestset "Unit cell" begin
             include("ctmrg/unitcell.jl")
         end
-        @time @safetestset "SVD wrapper" begin
-            include("ctmrg/svd_wrapper.jl")
-        end
         @time @safetestset ":fixed CTMRG iteration scheme" begin
             include("ctmrg/fixed_iterscheme.jl")
         end
         @time @safetestset "Unit cells" begin
             include("ctmrg/unitcell.jl")
         end
-        @time @safetestset "CTMRG schemes" begin
-            include("ctmrg/ctmrgschemes.jl")
+        @time @safetestset "Flavors" begin
+            include("ctmrg/flavors.jl")
+        end
+        @time @safetestset "Jacobian real linearity" begin
+            include("ctmrg/jacobian_real_linear.jl")
+        end
+        @time @safetestset "Partition function" begin
+            include("ctmrg/partition_function.jl")
         end
     end
-    if GROUP == "ALL" || GROUP == "MPS"
+    if GROUP == "ALL" || GROUP == "BOUNDARYMPS"
         @time @safetestset "VUMPS" begin
             include("boundarymps/vumps.jl")
+        end
+    end
+    if GROUP == "ALL" || GROUP == "UTILITY"
+        @time @safetestset "SVD wrapper" begin
+            include("utility/svd_wrapper.jl")
+        end
+        @time @safetestset "Symmetrization" begin
+            include("utility/symmetrization.jl")
+        end
+        @time @safetestset "Differentiable tmap" begin
+            include("utility/diff_maps.jl")
         end
     end
     if GROUP == "ALL" || GROUP == "EXAMPLES"
@@ -44,6 +58,9 @@ end
         end
         @time @safetestset "Heisenberg model" begin
             include("heisenberg.jl")
+        end
+        @time @safetestset "J1-J2 model" begin
+            include("j1j2_model.jl")
         end
         @time @safetestset "P-wave superconductor" begin
             include("pwave.jl")

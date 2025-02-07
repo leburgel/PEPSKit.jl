@@ -32,7 +32,9 @@ mps, envs, ϵ = leading_boundary(mps, T, VUMPS())
 N = abs(prod(expectation_value(mps, T)))
 
 # This can be compared to the result obtained using the CTMRG algorithm
-ctm = leading_boundary(peps, CTMRG(; verbosity=1), CTMRGEnv(peps, ComplexSpace(20)))
+ctm = leading_boundary(
+    peps, SimultaneousCTMRG(; verbosity=1), CTMRGEnv(peps, ComplexSpace(20))
+)
 N´ = abs(norm(peps, ctm))
 
 @show abs(N - N´) / N
@@ -42,18 +44,20 @@ N´ = abs(norm(peps, ctm))
 # For PEPS with non-trivial unit cells, the principle is exactly the same.
 # The only difference is that now the transfer operator of the PEPS norm partition function
 # has multiple lines, each of which can be represented by an `InfiniteTransferPEPS` object.
-# Such a multi-line transfer operator is represented by a `TransferPEPSMultiline` object.
-# In this case, the boundary MPS is an `MPSMultiline` object, which should be initialized
+# Such a multi-line transfer operator is represented by a `MultilineTransferPEPS` object.
+# In this case, the boundary MPS is an `MultilineMPS` object, which should be initialized
 # by specifying a virtual space for each site in the partition function unit cell.
 
 peps2 = InfinitePEPS(ComplexSpace(2), ComplexSpace(2); unitcell=(2, 2))
-T2 = PEPSKit.TransferPEPSMultiline(peps2, 1)
+T2 = PEPSKit.MultilineTransferPEPS(peps2, 1)
 
 mps2 = PEPSKit.initializeMPS(T2, fill(ComplexSpace(20), 2, 2))
 mps2, envs2, ϵ = leading_boundary(mps2, T2, VUMPS())
 N2 = abs(prod(expectation_value(mps2, T2)))
 
-ctm2 = leading_boundary(peps2, CTMRG(; verbosity=1), CTMRGEnv(peps2, ComplexSpace(20)))
+ctm2 = leading_boundary(
+    peps2, SimultaneousCTMRG(; verbosity=1), CTMRGEnv(peps2, ComplexSpace(20))
+)
 N2´ = abs(norm(peps2, ctm2))
 
 @show abs(N2 - N2´) / N2

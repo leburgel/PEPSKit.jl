@@ -1,39 +1,105 @@
-# Get next and previous directional CTM enviroment index, respecting periodicity
+# Get next and previous directional CTMRG environment index, respecting periodicity
 _next(i, total) = mod1(i + 1, total)
 _prev(i, total) = mod1(i - 1, total)
 
+# Get next and previous coordinate (direction, row, column), given a direction and going around the environment clockwise
+function _next_coordinate((dir, row, col), rowsize, colsize)
+    if dir == 1
+        return (_next(dir, 4), row, _next(col, colsize))
+    elseif dir == 2
+        return (_next(dir, 4), _next(row, rowsize), col)
+    elseif dir == 3
+        return (_next(dir, 4), row, _prev(col, colsize))
+    elseif dir == 4
+        return (_next(dir, 4), _prev(row, rowsize), col)
+    end
+end
+function _prev_coordinate((dir, row, col), rowsize, colsize)
+    if dir == 1
+        return (_prev(dir, 4), _next(row, rowsize), col)
+    elseif dir == 2
+        return (_prev(dir, 4), row, _prev(col, colsize))
+    elseif dir == 3
+        return (_prev(dir, 4), _prev(row, rowsize), col)
+    elseif dir == 4
+        return (_prev(dir, 4), row, _next(col, colsize))
+    end
+end
+
+# iterator over each coordinates
+"""
+    eachcoordinate(x, dirs=1:4)
+
+Enumerate all (dir, row, col) pairs.
+"""
+function eachcoordinate end
+
+@non_differentiable eachcoordinate(args...)
+
 # Element-wise multiplication of TensorMaps respecting block structure
-function _elementwise_mult(a::AbstractTensorMap, b::AbstractTensorMap)
-    dst = similar(a)
-    for (k, block) in blocks(dst)
-        copyto!(block, blocks(a)[k] .* blocks(b)[k])
+function _elementwise_mult(a₁::AbstractTensorMap, a₂::AbstractTensorMap)
+    dst = similar(a₁)
+    for (k, b) in blocks(dst)
+        copyto!(b, block(a₁, k) .* block(a₂, k))
     end
     return dst
 end
 
-# Compute √S⁻¹ for diagonal TensorMaps
-function sdiag_inv_sqrt(S::AbstractTensorMap)
-    invsq = similar(S)
+_safe_pow(a::Real, pow::Real, tol::Real) = (pow < 0 && abs(a) < tol) ? zero(a) : a^pow
 
-    if sectortype(S) == Trivial
-        copyto!(invsq.data, LinearAlgebra.diagm(LinearAlgebra.diag(S.data) .^ (-1 / 2)))
-    else
-        for (k, b) in blocks(S)
-            copyto!(
-                blocks(invsq)[k], LinearAlgebra.diagm(LinearAlgebra.diag(b) .^ (-1 / 2))
-            )
-        end
+"""
+    sdiag_pow(s, pow::Real; tol::Real=eps(scalartype(s))^(3 / 4))
+
+Compute `s^pow` for a diagonal matrix `s`.
+"""
+function sdiag_pow(s::DiagonalTensorMap, pow::Real; tol::Real=eps(scalartype(s))^(3 / 4))
+    # Relative tol w.r.t. largest singular value (use norm(∘, Inf) to make differentiable)
+    tol *= norm(s, Inf)
+    spow = DiagonalTensorMap(_safe_pow.(s.data, pow, tol), space(s, 1))
+    return spow
+end
+function sdiag_pow(
+    s::AbstractTensorMap{T,S,1,1}, pow::Real; tol::Real=eps(scalartype(s))^(3 / 4)
+) where {T,S}
+    # Relative tol w.r.t. largest singular value (use norm(∘, Inf) to make differentiable)
+    tol *= norm(s, Inf)
+    spow = similar(s)
+    for (k, b) in blocks(s)
+        copyto!(
+            block(spow, k), LinearAlgebra.diagm(_safe_pow.(LinearAlgebra.diag(b), pow, tol))
+        )
     end
-
-    return invsq
+    return spow
 end
 
-function ChainRulesCore.rrule(::typeof(sdiag_inv_sqrt), S::AbstractTensorMap)
-    invsq = sdiag_inv_sqrt(S)
-    function sdiag_inv_sqrt_pullback(c̄)
-        return (ChainRulesCore.NoTangent(), -1 / 2 * _elementwise_mult(c̄, invsq'^3))
+function ChainRulesCore.rrule(
+    ::typeof(sdiag_pow),
+    s::AbstractTensorMap,
+    pow::Real;
+    tol::Real=eps(scalartype(s))^(3 / 4),
+)
+    tol *= norm(s, Inf)
+    spow = sdiag_pow(s, pow; tol)
+    spow_minus1_conj = scale!(sdiag_pow(s', pow - 1; tol), pow)
+    function sdiag_pow_pullback(c̄_)
+        c̄ = unthunk(c̄_)
+        return (ChainRulesCore.NoTangent(), _elementwise_mult(c̄, spow_minus1_conj))
     end
-    return invsq, sdiag_inv_sqrt_pullback
+    return spow, sdiag_pow_pullback
+end
+
+"""
+    absorb_s(u::AbstractTensorMap, s::DiagonalTensorMap, vh::AbstractTensorMap)
+
+Given `tsvd` result `u`, `s` and `vh`, absorb singular values `s` into `u` and `vh` by:
+```
+    u -> u * sqrt(s), vh -> sqrt(s) * vh
+```
+"""
+function absorb_s(u::AbstractTensorMap, s::DiagonalTensorMap, vh::AbstractTensorMap)
+    @assert !isdual(space(s, 1))
+    sqrt_s = sdiag_pow(s, 0.5)
+    return u * sqrt_s, sqrt_s * vh
 end
 
 # Check whether diagonals contain degenerate values up to absolute or relative tolerance
@@ -47,28 +113,6 @@ function is_degenerate_spectrum(
         end
     end
     return false
-end
-
-"""
-    projector_type(T::DataType, size)
-    projector_type(edges::Array{<:AbstractTensorMap})
-
-Create two arrays of specified `size` that contain undefined tensors representing
-left and right acting projectors, respectively. The projector types are inferred
-from the TensorMap type `T` which avoids having to recompute transpose tensors.
-Alternatively, supply an array of edge tensors from which left and right projectors
-are intialized explicitly with zeros.
-"""
-function projector_type(T::DataType, size)
-    P_left = Array{T,length(size)}(undef, size)
-    Prtype = tensormaptype(spacetype(T), numin(T), numout(T), storagetype(T))
-    P_right = Array{Prtype,length(size)}(undef, size)
-    return P_left, P_right
-end
-function projector_type(edges::Array{<:AbstractTensorMap})
-    P_left = map(e -> TensorMap(zeros, scalartype(e), space(e)), edges)
-    P_right = map(e -> TensorMap(zeros, scalartype(e), domain(e), codomain(e)), edges)
-    return P_left, P_right
 end
 
 # There are no rrules for rotl90 and rotr90 in ChainRules.jl
@@ -156,27 +200,4 @@ macro showtypeofgrad(x)
             x̄
         end
     )
-end
-
-"""
-    @fwdthreads(ex)
-
-Apply `Threads.@threads` only in the forward pass of the program.
-
-It works by wrapping the for-loop expression in an if statement where in the forward pass
-the loop in computed in parallel using `Threads.@threads`, whereas in the backwards pass
-the `Threads.@threads` is omitted in order to make the expression differentiable.
-"""
-macro fwdthreads(ex)
-    @assert ex.head === :for "@fwdthreads expects a for loop:\n$ex"
-
-    diffable_ex = quote
-        if Zygote.isderiving()
-            $ex
-        else
-            Threads.@threads $ex
-        end
-    end
-
-    return esc(diffable_ex)
 end
