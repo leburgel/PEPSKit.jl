@@ -1,10 +1,10 @@
-import Pkg
-Pkg.add(url="https://github.com/tangwei94/SpatiallySymmetricTensor.jl", rev="main")
+# import Pkg
+# Pkg.add(url="https://github.com/tangwei94/SpatiallySymmetricTensor.jl", rev="main")
 
 using TensorKit
 using PEPSKit
 using PEPSKit: PEPSTensor
-using SpatiallySymmetricTensor
+using SpatiallySymmetricTensors
 using Zygote
 
 # Style definitions
@@ -21,8 +21,8 @@ struct HReflectionRotation <: SymmetrizationStyle end # C4v
 
 # unit cell styles
 abstract type UnitCellStyle end
-struct Asymmetric <: UnitCellStyle end # 1x1 unit cell
-struct Symmetric <: UnitCellStyle end # 2x2 unit cell
+struct Asymmetric <: UnitCellStyle end # 1x1 unit cell, asymmetric bond absorption
+struct Symmetric <: UnitCellStyle end # 2x2 unit cell, symmetric bond absorption
 
 # Filling up a PEPS unit cell
 # ---------------------------
@@ -58,11 +58,11 @@ hflip(A::PEPSTensor) = permute(A, ((1,), (4, 3, 2, 5)))
 dflip1(A::PEPSTensor) = permute(A, ((1,), (3, 2, 5, 4)))
 dflip2(A::PEPSTensor) = permute(A, ((1,), (5, 4, 3, 2)))
 
-# hermitian reflections:
-hvflip(A::PEPSTensor) = permute(A', ((5,), (3, 2, 1, 4)))
-hhflip(A::PEPSTensor) = permute(A', ((5,), (1, 4, 3, 2)))
+# hermitian reflections: defined in PEPSKit.jl
+hvflip(A::PEPSTensor) = PEPSKit.herm_depth(A)
+hhflip(A::PEPSTensor) = PEPSKit.herm_width(A)
 
-# impose regular spatial symmetries
+# impose regular spatial symmetries: don't use the one from PEPSKit.jl because we don't need flippers here
 rot_inv(A::PEPSTensor) = 0.25 * (A + rotl90(A) + rotr90(A) + rot180(A))
 
 vflip_inv(A::PEPSTensor) = 0.5 * (A + vflip(A))
@@ -127,8 +127,8 @@ vec2peps(a::Vector{<:Real}, A_basis::Vector{<:PEPSTensor}) = sum(a .* A_basis)
 # --------------------------------------------
 
 function peps_opt_costfunction(;
-    boundary_alg=CTMRG(),
-    gradient_alg=GMRES(),
+    boundary_alg=SimultaneousCTMRG(),
+    gradient_alg=LinSolver(),
     reuse_env=true,
     unitcell_style=Asymmetric(),
     symm_style=HReflRotation(),
@@ -169,8 +169,8 @@ end
 function vector_opt_costfunction(
     P::S,
     V::S;
-    boundary_alg=CTMRG(),
-    gradient_alg=GMRES(),
+    boundary_alg=SimultaneousCTMRG(),
+    gradient_alg=LinSolver(),
     reuse_env=true,
     unitcell_style=Asymmetric(),
     symm_style=HReflRotation(),

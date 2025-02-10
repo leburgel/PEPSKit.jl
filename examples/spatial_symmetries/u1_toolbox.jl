@@ -2,7 +2,28 @@ using TensorKit
 using PEPSKit
 using ChainRulesCore
 
-# extend spatial symmetry toolbox for a specific U1-symmetric use case
+## Heisenberg XXZ model
+
+function heisenberg_XXZ(lattice::InfiniteSquare; kwargs...)
+    return heisenberg_XXZ(ComplexF64, Trivial, lattice; kwargs...)
+end
+function heisenberg_XXZ(
+    T::Type{<:Number}, S::Type{<:Sector}, lattice::InfiniteSquare; J=1.0, Δ=1.0, spin=1//2
+)
+    h =
+        J * (
+            (S_plusmin(T, S; spin=spin) + S_minplus(T, S; spin=spin)) / 2 +
+            Δ * S_zz(T, S; spin=spin)
+        )
+    rmul!(h, 1 / 4)
+    spaces = fill(domain(h)[1], (lattice.Nrows, lattice.Ncols))
+    return LocalOperator(
+        spaces, (neighbor => h for neighbor in nearest_neighbours(lattice))...
+    )
+    return nothing
+end
+
+## U1-style symmetrization
 
 struct U1HReflection <: SymmetrizationStyle end
 struct U1HReflectionRotation <: SymmetrizationStyle end
@@ -33,6 +54,7 @@ end
 function ChainRulesCore.rrule(::typeof(charge_conj), t::AbstractTensorMap)
     t´ = charge_conj(t)
     function charge_conj_pullback(Δt)
+        Δt = unthunk(Δt)
         ∂t = charge_conj(Δt)
         return NoTangent(), ∂t
     end

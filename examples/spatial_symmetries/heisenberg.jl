@@ -16,15 +16,17 @@ using PEPSKit: PEPSTensor
 include("spatial_toolbox.jl")
 
 # parameters
-χbond = 3
+χbond = 2
 χenv = 20
-boundary_alg = CTMRG(;
-    trscheme=truncdim(χenv), tol=1e-10, miniter=3, maxiter=400, verbosity=2, ctmrgscheme=:sequential,
+boundary_alg = SimultaneousCTMRG(;
+    trscheme=truncdim(χenv), tol=1e-10, miniter=3, maxiter=400, verbosity=2
 )
-gradient_alg = LinSolver(; solver=GMRES(; tol=1e-6, maxiter=10, verbosity=2), iterscheme=:diffgauge) # :diffgauge necessary for :sequential CTMRG scheme
-optimization_alg = LBFGS(; gradtol=1e-4, verbosity=2)
+# iterscheme=:fixed is giving me svdsolve cotangent issues, and some errors too...
+gradient_alg = LinSolver(;
+    solver=GMRES(; tol=1e-6, maxiter=10, verbosity=2), iterscheme=:diffgauge
+) # :diffgauge necessary for :sequential CTMRG scheme
+optimization_alg = LBFGS(; gradtol=1e-4, verbosity=3)
 reuse_env = true
-verbosity = 2
 
 # choose symmetrization style
 # symm_style = None() # no spatial symmetries
@@ -35,11 +37,11 @@ verbosity = 2
 symm_style = HReflectionRotation() # rotation and Hermitian reflection invariance
 
 # choose unit cell style
-unitcell_style = Asymmetric()
-# unitcell_style = Symmetric()
+# unitcell_style = Asymmetric()
+unitcell_style = Symmetric()
 
 # square lattice Heisenberg Hamiltonian
-heisenberg_ham(::Asymmetric) = square_lattice_heisenberg(; Jx=-1, Jy=1, Jz=-1)
+heisenberg_ham(::Asymmetric) = heisenberg_XYZ(InfiniteSquare(); Jx=-1, Jy=1, Jz=-1)
 heisenberg_ham(::Symmetric) = repeat(heisenberg_ham(Asymmetric()), 2, 2)
 
 H = heisenberg_ham(unitcell_style)
@@ -91,6 +93,5 @@ vector_cfun, vector_retract, vector_inner = vector_opt_costfunction(
 );
 
 nothing
-
 
 # D = 3: non-symm converges to E = -0.663... (??? no clue cause it never converges); symm converges to E = -0.66756...

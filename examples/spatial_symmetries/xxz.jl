@@ -1,4 +1,6 @@
-# exploiting(?) charge conjugation and spatial symmetries in the XXZ Heisenberg model
+# exploiting charge conjugation and spatial symmetries in the XXZ Heisenberg model
+
+using Revise
 
 using LinearAlgebra
 using KrylovKit
@@ -15,6 +17,7 @@ using MPSKitModels: S_plusmin, S_minplus, S_zz
 
 include("spatial_toolbox.jl")
 include("u1_toolbox.jl")
+include("space_shifting.jl")
 
 # Part 0: Setup
 # -------------
@@ -22,64 +25,32 @@ include("u1_toolbox.jl")
 # spaces
 Vpeps = U1Space(0 => 2, 1 => 1, -1 => 1) # should get me somewhere close to E = -0.669...?
 Venv = U1Space(0 => 6, 1 => 4, -1 => 4, 2 => 2, -2 => 2)
-P = U1Space(1 / 2 => 1, -1 / 2 => 1)
 # staggered auxiliary physical spaces
-Paux = [U1Space(-1 / 2 => 1) U1Space(1 / 2 => 1); U1Space(1 / 2 => 1) U1Space(-1 / 2 => 1)] 
-# fuse auxiliary spaces with physical spaces
-Pspaces = map(Paux) do P´
-    fuse(P, P´)
-end
-Nspaces = [Vpeps Vpeps; Vpeps Vpeps]
-Espaces = [Vpeps Vpeps; Vpeps Vpeps]
+Paux = [
+    U1Space(-1 / 2 => 1) U1Space(1 / 2 => 1)
+    U1Space(1 / 2 => 1) U1Space(-1 / 2 => 1)
+]
 
 # parameters
 χenv = 18
-boundary_alg = CTMRG(;
-    trscheme=FixedSpaceTruncation(), tol=1e-10, miniter=3, maxiter=100, verbosity=1, ctmrgscheme=:sequential,
+boundary_alg = SimultaneousCTMRG(;
+    trscheme=FixedSpaceTruncation(), tol=1e-10, miniter=3, maxiter=100, verbosity=2
 )
-gradient_alg = LinSolver(; solver=GMRES(; tol=1e-6, maxiter=10, verbosity=2), iterscheme=:diffgauge) # :diffgauge necessary for :sequential CTMRG scheme
-optimization_alg = LBFGS(; gradtol=1e-4, verbosity=2)
+gradient_alg = LinSolver(;
+    solver=GMRES(; tol=1e-6, maxiter=10, verbosity=2), iterscheme=:diffgauge
+) # :diffgauge necessary for :sequential CTMRG scheme
+optimization_alg = LBFGS(; gradtol=1e-4, verbosity=3)
 reuse_env = true
 verbosity = 2
 
-# Heisenberg Hamiltonian without explicit U1 shift
-function square_lattice_heisenberg(; J=1.0, Δ=1.0, spin=1//2)
-    H =
-        J * (
-            (S_plusmin(U1Irrep; spin=spin) + S_minplus(U1Irrep; spin=spin)) / 2 +
-            Δ * S_zz(U1Irrep; spin=spin)
-        )
-    return H / 4
-end
+# virtual spaces
+Nspaces = [Vpeps Vpeps; Vpeps Vpeps]
+Espaces = [Vpeps Vpeps; Vpeps Vpeps]
 
-# Heisenberg Hamiltonian with explicit U1 shift
-function mod_square_lattice_heisenberg(; J=1.0, Δ=1.0, spin=1//2)
-    H = square_lattice_heisenberg(; J, Δ, spin)
-    I1 = id(Paux[1, 1])
-    I2 = id(Paux[1, 2])
-    H´ = H ⊗ I1 ⊗ I2
-    f1 = isomorphism(fuse(space(H´, 1), space(H´, 3)), space(H´, 1) ⊗ space(H´, 3))
-    f2 = isomorphism(fuse(space(H´, 2), space(H´, 4)), space(H´, 2) ⊗ space(H´, 4))
-    @tensor H_AB[-1 -2; -3 -4] :=
-        H´[1 2 3 4; 5 6 7 8] *
-        f1[-1; 1 3] *
-        f2[-2; 2 4] *
-        conj(f1[-3; 5 7]) *
-        conj(f2[-4; 6 8])
-    H_BA = permute(H_AB, ((2, 1), (4, 3)))
+# TODO: shift Hamiltonian and record shifted physical spaces
+H1 = heisenberg_XXZ(ComplexF64, U1Irrep, InfiniteSquare(2, 2); J=1.0, Δ=1.0, spin=1//2)
 
-    terms = []
-    for (r, c) in Iterators.product(1:2, 1:2)
-        H = mod(r + c, 2) == 0 ? H_AB : H_BA
-        println()
-        push!(terms, (CartesianIndex(r, c), CartesianIndex(r, c + 1)) => H)
-        push!(terms, (CartesianIndex(r, c), CartesianIndex(r + 1, c)) => H)
-    end
-
-    return LocalOperator(Pspaces, terms...)
-end
-
-H = mod_square_lattice_heisenberg(; J=1.0, Δ=1.0, spin=1//2) # fused
+H, Pspaces = shift_physical_spaces(H1, Paux)
 
 # Part I: naive optimization using a 2-site unit cell
 # ---------------------------------------------------
@@ -108,11 +79,10 @@ result = fixedpoint(ψ₀, H, pepsopt_alg, env₀)
 
 @info "Finished $mode"
 
-numfg = result.info
+numfg = result.numfg
 E = result.E
 
 @info "Energy: $E\t numfg: $numfg\t numiter: ???"
-
 
 # Part II: spatial and charge conjugation symmetry, trivial flipper
 # -----------------------------------------------------------------
@@ -151,7 +121,6 @@ peps_cfun, peps_retract, peps_inner = peps_opt_costfunction(;
 @info "Finished $mode"
 
 @info "Energy: $E\t numfg: $numfg\t numiter: $(length(history[2]))"
-
 
 # Part III: spatial and charge conjugation symmetry, NONTRIVIAL FLIPPER -> WORKING
 # ---------------------------------------------------------------------
