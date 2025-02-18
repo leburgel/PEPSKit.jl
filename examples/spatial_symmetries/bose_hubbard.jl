@@ -82,7 +82,7 @@ end
 
 # shift Hamiltonian and record shifted physical spaces
 H1 = bose_hubbard_ham(unitcell_style, symmetry, InfiniteSquare(); t, U, cutoff)
-H, Pspaces = Saux(H1, fill(Saux, size(H1.lattice)))
+H, Pspaces = add_physical_charge(H1, fill(Saux, size(H1.lattice)))
 P = first(Pspaces) # uniform physical space
 
 # Part I: manually imposing symmetries in gradient computation and retraction
