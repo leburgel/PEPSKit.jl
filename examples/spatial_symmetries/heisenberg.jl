@@ -1,14 +1,9 @@
 # incorporate spatial symmetries in PEPS optimization: example using Heisenberg model
 
-using LinearAlgebra
-using KrylovKit
 using TensorKit
 using PEPSKit
-using Zygote
-using ChainRulesCore
+using KrylovKit
 using OptimKit
-
-using PEPSKit: PEPSTensor
 
 # Part O: Setup
 # -------------

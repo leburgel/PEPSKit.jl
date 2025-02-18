@@ -1,10 +1,6 @@
-# Generic routine to fuse auxiliary physical spaces into a PEPS and a Hamiltonian,
-# essentially 'shifting' the physical charges in a consistent way.
-# Just so we don't have to have dedicated types to deal with auxiliary legs... 
-
 using TensorKit
 using PEPSKit
-import MPSKit: tensorexpr, PeriodicArray
+import MPSKit: tensorexpr, PeriodicArray, add_physical_charge
 
 @generated function _fuse_isomorphisms(
     op::AbstractTensorMap{<:Any,S,N,N}, fs::Vector{<:AbstractTensorMap{<:Any,S,1,2}}
@@ -37,18 +33,23 @@ function _fuse_ids(op::AbstractTensorMap{T,S,N,N}, Ps::NTuple{N,S}) where {T,S,N
     return _fuse_isomorphisms(op, fs)
 end
 
+# TODO: move all of this into PEPSKit
+TensorKit.sectortype(O::LocalOperator) = sectortype(typeof(O))
+TensorKit.sectortype(::Type{<:LocalOperator{T,S}}) where {T,S} = sectortype(S)
 """
-    shift_physical_spaces(H::LocalOperator, Paux::Matrix{S}) where {S}
+    add_physical_charge(H::LocalOperator, charges::AbstractMatrix{<:Sector}) where {S}
 
-Shift spaces of a `LocalOperator` according to a given matrix of 'auxiliary' physical
-spaces.
+Change the spaces of a `LocalOperator` by fusing in an auxiliary charge on every site,
+according to a given matrix of 'auxiliary' physical charges.
 """
-function shift_physical_spaces(H::LocalOperator{T,S}, Paux::AbstractMatrix{S}) where {T,S}
-    @assert size(H.lattice) == size(Paux) "Incompatible lattice and auxiliary space sizes"
+function add_physical_charge(H::LocalOperator, charges::AbstractMatrix{<:Sector})
+    size(H.lattice) == size(charges) || throw(ArgumentError("Incompatible lattice and auxiliary charge sizes")) 
+    sectortype(H) === eltype(charges) || throw(SectorMismatch("Incompatible lattice and auxiliary charge sizes"))
+
+    Paux = PeriodicArray(map(charge -> Vect[typeof(charge)](charge => 1), charges))
+
     # new physical spaces
     Pspaces = map(fuse, H.lattice, Paux)
-    # make auxiliary space indexing periodic
-    Paux = PeriodicArray(Paux)
 
     new_terms = map(H.terms) do (sites, op)
         Paux_slice = map(Base.Fix1(getindex, Paux), sites)

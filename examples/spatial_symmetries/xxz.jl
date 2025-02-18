@@ -1,19 +1,9 @@
 # exploiting charge conjugation and spatial symmetries in the XXZ Heisenberg model
 
-using Revise
-
-using LinearAlgebra
 using KrylovKit
-using TensorOperations
 using TensorKit
-using MPSKit
 using PEPSKit
 using OptimKit
-using ChainRulesCore
-using Zygote
-using PEPSKit:
-    PEPSTensor, NORTHWEST, NORTHEAST, SOUTHEAST, SOUTHWEST, NORTH, EAST, SOUTH, WEST
-using MPSKitModels: S_plusmin, S_minplus, S_zz
 
 include("spatial_toolbox.jl")
 include("u1_toolbox.jl")
@@ -25,10 +15,10 @@ include("space_shifting.jl")
 # spaces
 Vpeps = U1Space(0 => 2, 1 => 1, -1 => 1) # should get me somewhere close to E = -0.669...?
 Venv = U1Space(0 => 6, 1 => 4, -1 => 4, 2 => 2, -2 => 2)
-# staggered auxiliary physical spaces
-Paux = [
-    U1Space(-1 / 2 => 1) U1Space(1 / 2 => 1)
-    U1Space(1 / 2 => 1) U1Space(-1 / 2 => 1)
+# staggered auxiliary physical charges
+Saux = [
+    U1Irrep(-1 // 2) U1Irrep(1 // 2)
+    U1Irrep(1 // 2) U1Irrep(-1 // 2)
 ]
 
 # parameters
@@ -48,7 +38,7 @@ Espaces = [Vpeps Vpeps; Vpeps Vpeps]
 
 # shift Hamiltonian and record shifted physical spaces
 H1 = heisenberg_XXZ(ComplexF64, U1Irrep, InfiniteSquare(2, 2); J=1.0, Δ=1.0, spin=1//2)
-H, Pspaces = shift_physical_spaces(H1, Paux)
+H, Pspaces = add_physical_charge(H1, Saux)
 
 # Part I: naive optimization using a 2-site unit cell
 # ---------------------------------------------------
@@ -73,7 +63,7 @@ pepsopt_alg = PEPSOptimize(;
     gradient_alg=gradient_alg,
     reuse_env=reuse_env,
 )
-result = fixedpoint(ψ₀, H, pepsopt_alg, env₀)
+result = fixedpoint(H, ψ₀, env₀, pepsopt_alg)
 
 @info "Finished $mode"
 

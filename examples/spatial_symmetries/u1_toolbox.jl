@@ -1,5 +1,7 @@
 using TensorKit
 using PEPSKit
+using PEPSKit: PEPSTensor
+using MPSKitModels: S_plusmin, S_minplus, S_zz
 using ChainRulesCore
 
 ## Heisenberg XXZ model

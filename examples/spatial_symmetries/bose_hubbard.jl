@@ -1,18 +1,11 @@
 # incorporate spatial symmetries in PEPS optimization: example using Heisenberg model
 
-using Revise
-
-using LinearAlgebra
-using KrylovKit
 using TensorKit
 using PEPSKit
 import MPSKitModels:
     MPSKitModels, bose_hubbard_model, a_plusmin, a_minplus, a_number, contract_onesite
-using Zygote
-using ChainRulesCore
 using OptimKit
-
-using PEPSKit: PEPSTensor
+using KrylovKit
 
 # Part O: Setup
 # -------------
@@ -40,6 +33,7 @@ function MPSKitModels.bose_hubbard_model(
 
     spaces = fill(space(N, 1), (lattice.Nrows, lattice.Ncols))
 
+    # TODO: put everything in the two-site term?
     H = LocalOperator(
         spaces,
         (neighbor => -t * hopping_term for neighbor in nearest_neighbours(lattice))...,
@@ -54,8 +48,8 @@ symmetry = U1Irrep
 Vpeps = U1Space(0 => 2, 1//2 => 1, -1//2 => 1) # TODO: play around with this
 Venv = U1Space(0 => 4, 1//2 => 2, -1//2 => 2, 1 => 2, -1 => 2) # TODO: seed with a dynamic pass...
 
-# uniform auxiliary physical space, for uniform half-filling
-Paux = U1Space(-1//2 => 1)
+# uniform auxiliary physical charge, for uniform half-filling
+Saux = U1Irrep(-1//2)
 
 # parameters
 t = 1.0
@@ -88,7 +82,7 @@ end
 
 # shift Hamiltonian and record shifted physical spaces
 H1 = bose_hubbard_ham(unitcell_style, symmetry, InfiniteSquare(); t, U, cutoff)
-H, Pspaces = shift_physical_spaces(H1, fill(Paux, size(H1.lattice)))
+H, Pspaces = Saux(H1, fill(Saux, size(H1.lattice)))
 P = first(Pspaces) # uniform physical space
 
 # Part I: manually imposing symmetries in gradient computation and retraction
