@@ -1,21 +1,23 @@
 using TensorKit
 using PEPSKit
 using PEPSKit: PEPSTensor
-using MPSKitModels: S_plusmin, S_minplus, S_zz
+using MPSKitModels: MPSKitModels, heisenberg_XXZ, S_plusmin, S_minplus, S_zz
 using ChainRulesCore
 
 ## Heisenberg XXZ model
 
-function heisenberg_XXZ(lattice::InfiniteSquare; kwargs...)
-    return heisenberg_XXZ(ComplexF64, Trivial, lattice; kwargs...)
-end
-function heisenberg_XXZ(
-    T::Type{<:Number}, S::Type{<:Sector}, lattice::InfiniteSquare; J=1.0, Δ=1.0, spin=1//2
+function MPSKitModels.heisenberg_XXZ(
+    T::Type{<:Number},
+    S::Type{<:Sector},
+    lattice::InfiniteSquare;
+    J=1.0,
+    Delta=1.0,
+    spin=1//2,
 )
     h =
         J * (
             (S_plusmin(T, S; spin=spin) + S_minplus(T, S; spin=spin)) / 2 +
-            Δ * S_zz(T, S; spin=spin)
+            Delta * S_zz(T, S; spin=spin)
         )
     rmul!(h, 1 / 4)
     spaces = fill(domain(h)[1], (lattice.Nrows, lattice.Ncols))

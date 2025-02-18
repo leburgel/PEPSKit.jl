@@ -43,8 +43,10 @@ Change the spaces of a `LocalOperator` by fusing in an auxiliary charge on every
 according to a given matrix of 'auxiliary' physical charges.
 """
 function add_physical_charge(H::LocalOperator, charges::AbstractMatrix{<:Sector})
-    size(H.lattice) == size(charges) || throw(ArgumentError("Incompatible lattice and auxiliary charge sizes")) 
-    sectortype(H) === eltype(charges) || throw(SectorMismatch("Incompatible lattice and auxiliary charge sizes"))
+    size(H.lattice) == size(charges) ||
+        throw(ArgumentError("Incompatible lattice and auxiliary charge sizes"))
+    sectortype(H) === eltype(charges) ||
+        throw(SectorMismatch("Incompatible lattice and auxiliary charge sizes"))
 
     Paux = PeriodicArray(map(charge -> Vect[typeof(charge)](charge => 1), charges))
 

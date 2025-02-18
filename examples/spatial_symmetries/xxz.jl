@@ -4,6 +4,7 @@ using KrylovKit
 using TensorKit
 using PEPSKit
 using OptimKit
+using MPSKitModels: heisenberg_XXZ
 
 include("spatial_toolbox.jl")
 include("u1_toolbox.jl")
@@ -17,8 +18,8 @@ Vpeps = U1Space(0 => 2, 1 => 1, -1 => 1) # should get me somewhere close to E = 
 Venv = U1Space(0 => 6, 1 => 4, -1 => 4, 2 => 2, -2 => 2)
 # staggered auxiliary physical charges
 Saux = [
-    U1Irrep(-1 // 2) U1Irrep(1 // 2)
-    U1Irrep(1 // 2) U1Irrep(-1 // 2)
+    U1Irrep(-1//2) U1Irrep(1//2)
+    U1Irrep(1//2) U1Irrep(-1//2)
 ]
 
 # parameters
@@ -37,7 +38,7 @@ Nspaces = [Vpeps Vpeps; Vpeps Vpeps]
 Espaces = [Vpeps Vpeps; Vpeps Vpeps]
 
 # shift Hamiltonian and record shifted physical spaces
-H1 = heisenberg_XXZ(ComplexF64, U1Irrep, InfiniteSquare(2, 2); J=1.0, Δ=1.0, spin=1//2)
+H1 = heisenberg_XXZ(ComplexF64, U1Irrep, InfiniteSquare(2, 2); J=1.0, Delta=1.0, spin=1//2)
 H, Pspaces = add_physical_charge(H1, Saux)
 
 # Part I: naive optimization using a 2-site unit cell
