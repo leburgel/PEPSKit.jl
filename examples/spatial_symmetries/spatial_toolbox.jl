@@ -1,5 +1,5 @@
 # import Pkg
-# Pkg.add(url="https://github.com/tangwei94/SpatiallySymmetricTensor.jl", rev="main")
+# Pkg.add(url="https://github.com/tangwei94/SpatiallySymmetricTensors.jl", rev="main")
 
 using TensorKit
 using PEPSKit
@@ -131,19 +131,19 @@ function peps_opt_costfunction(;
     gradient_alg=LinSolver(),
     reuse_env=true,
     unitcell_style=Asymmetric(),
-    symm_style=HReflRotation(),
+    symm_style=HReflectionRotation(),
 )
     function peps_cfun(x)
         (A::PEPSTensor, env::CTMRGEnv) = x
         E, g = withgradient(A) do x
             ψ = fill_peps(x, unitcell_style) # the first bamboozle
-            env´ = PEPSKit.hook_pullback(
+            env´, _ = PEPSKit.hook_pullback(
                 leading_boundary, env, ψ, boundary_alg; alg_rrule=gradient_alg
             )
             ignore_derivatives() do
                 reuse_env && PEPSKit.update!(env, env´) # in-place update CTMRG environments
             end
-            return costfun(ψ, env´, H)
+            return cost_function(ψ, env´, H)
         end
         g = symmetrize(only(g), symm_style) # the second bamboozle
 
@@ -173,7 +173,7 @@ function vector_opt_costfunction(
     gradient_alg=LinSolver(),
     reuse_env=true,
     unitcell_style=Asymmetric(),
-    symm_style=HReflRotation(),
+    symm_style=HReflectionRotation(),
 ) where {S<:ElementarySpace}
     A_basis = find_symmetric_basis(P, V, symm_style)
 
@@ -181,13 +181,13 @@ function vector_opt_costfunction(
         (a::Vector{<:Real}, env::CTMRGEnv) = x
         E, g = withgradient(a) do v
             ψ = fill_peps(vec2peps(v, A_basis), unitcell_style) # the bamboozle
-            env´ = PEPSKit.hook_pullback(
+            env´, _ = PEPSKit.hook_pullback(
                 leading_boundary, env, ψ, boundary_alg; alg_rrule=gradient_alg
             )
             ignore_derivatives() do
                 reuse_env && PEPSKit.update!(env, env´) # in-place update CTMRG environments
             end
-            return costfun(ψ, env´, H)
+            return cost_function(ψ, env´, H)
         end
 
         return E, only(g)

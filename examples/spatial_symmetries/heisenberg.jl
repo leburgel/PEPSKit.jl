@@ -37,8 +37,8 @@ reuse_env = true
 symm_style = HReflectionRotation() # rotation and Hermitian reflection invariance
 
 # choose unit cell style
-# unitcell_style = Asymmetric()
-unitcell_style = Symmetric()
+unitcell_style = Asymmetric()
+# unitcell_style = Symmetric()
 
 # square lattice Heisenberg Hamiltonian
 heisenberg_ham(::Asymmetric) = heisenberg_XYZ(InfiniteSquare(); Jx=-1, Jy=1, Jz=-1)
@@ -60,7 +60,7 @@ Venv = ℂ^χenv
 A0 = TensorMap(randn, ComplexF64, P ← Vpeps ⊗ Vpeps ⊗ Vpeps ⊗ Vpeps)
 A0 = symmetrize(A0, symm_style)
 ψ₀ = fill_peps(A0, unitcell_style)
-env₀ = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
+env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 
@@ -80,7 +80,7 @@ peps_cfun, peps_retract, peps_inner = peps_opt_costfunction(;
 A_basis = find_symmetric_basis(P, Vpeps, symm_style)
 a₀ = randn(length(A_basis))
 ψ₀ = fill_peps(vec2peps(a₀, A_basis), unitcell_style)
-env₀ = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
+env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 

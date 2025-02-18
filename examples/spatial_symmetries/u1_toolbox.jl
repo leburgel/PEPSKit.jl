@@ -33,6 +33,8 @@ struct U1XHReflectionRotation <: SymmetrizationStyle end
 struct U1Symmetric <: UnitCellStyle end # trivial flipper
 struct U1XSymmetric <: UnitCellStyle end # non-trivial flipper
 
+get_point_group(::U1HReflectionRotation) = C4v(), (:A1, :A2)
+
 ## U1 charge conjugation
 
 # no actual duals, since this does NOT flip any arrows

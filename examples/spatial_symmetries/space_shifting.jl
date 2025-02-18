@@ -2,7 +2,9 @@
 # essentially 'shifting' the physical charges in a consistent way.
 # Just so we don't have to have dedicated types to deal with auxiliary legs... 
 
-import MPSKit: tensorexpr
+using TensorKit
+using PEPSKit
+import MPSKit: tensorexpr, PeriodicArray
 
 @generated function _fuse_isomorphisms(
     op::AbstractTensorMap{<:Any,S,N,N}, fs::Vector{<:AbstractTensorMap{<:Any,S,1,2}}
@@ -41,7 +43,7 @@ end
 Shift spaces of a `LocalOperator` according to a given matrix of 'auxiliary' physical
 spaces.
 """
-function shift_physical_spaces(H::LocalOperator{T,S}, Paux::Matrix{S}) where {T,S}
+function shift_physical_spaces(H::LocalOperator{T,S}, Paux::AbstractMatrix{S}) where {T,S}
     @assert size(H.lattice) == size(Paux) "Incompatible lattice and auxiliary space sizes"
     # new physical spaces
     Pspaces = map(fuse, H.lattice, Paux)

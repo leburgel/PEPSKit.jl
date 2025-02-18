@@ -41,15 +41,13 @@ gradient_alg = LinSolver(;
 ) # :diffgauge necessary for :sequential CTMRG scheme
 optimization_alg = LBFGS(; gradtol=1e-4, verbosity=3)
 reuse_env = true
-verbosity = 2
 
 # virtual spaces
 Nspaces = [Vpeps Vpeps; Vpeps Vpeps]
 Espaces = [Vpeps Vpeps; Vpeps Vpeps]
 
-# TODO: shift Hamiltonian and record shifted physical spaces
+# shift Hamiltonian and record shifted physical spaces
 H1 = heisenberg_XXZ(ComplexF64, U1Irrep, InfiniteSquare(2, 2); J=1.0, Δ=1.0, spin=1//2)
-
 H, Pspaces = shift_physical_spaces(H1, Paux)
 
 # Part I: naive optimization using a 2-site unit cell
@@ -65,7 +63,7 @@ Nspaces = [Vpeps Vpeps; Vpeps Vpeps]
 Espaces = [Vpeps Vpeps; Vpeps Vpeps]
 ψ₀ = InfinitePEPS(randn, ComplexF64, Pspaces, Nspaces, Espaces)
 env₀ = CTMRGEnv(ψ₀, Venv)
-env₀ = leading_boundary(env₀, ψ₀, boundary_alg)
+env₀, = leading_boundary(env₀, ψ₀, boundary_alg)
 
 ## Optimize
 
@@ -106,7 +104,7 @@ unitcell_style = U1Symmetric()
 A0 = TensorMap(randn, ComplexF64, Pspaces[1, 1] ← Vpeps ⊗ Vpeps ⊗ Vpeps ⊗ Vpeps)
 A0 = symmetrize(A0, symm_style)
 ψ₀ = fill_peps(A0, unitcell_style)
-env₀ = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
+env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 
@@ -144,7 +142,7 @@ unitcell_style = U1XSymmetric()
 A0 = TensorMap(randn, ComplexF64, Pspaces[1, 1] ← Vpeps ⊗ Vpeps ⊗ Vpeps ⊗ Vpeps)
 A0 = symmetrize(A0, symm_style)
 ψ₀ = fill_peps(A0, unitcell_style)
-env₀ = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
+env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 
