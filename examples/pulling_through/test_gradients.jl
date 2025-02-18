@@ -95,7 +95,7 @@ steps = -0.01:0.005:0.01
         ) do (peps, envs)
             E, gs = Zygote.withgradient(peps) do psi
                 env2, = PEPSKit.hook_pullback(leading_boundary, envs, psi, pt_alg; alg_rrule)
-                return costfun(psi, env2, models[i])
+                return cost_function(psi, env2, models[i])
             end
             # TODO: symmetrize the gradient here?
             g = only(gs)

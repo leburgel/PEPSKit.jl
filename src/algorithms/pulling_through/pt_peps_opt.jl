@@ -20,10 +20,10 @@ function CTMRGEnv(env::SymmetricEnv{C,T}) where {C,T}
     end
     return CTMRGEnv(copy(corners), copy(edges))
 end
-# TODO: do I need to write an explicit rrule for this?
+# TODO: do I need to write an explicit rrule for this? seem like not...
 
-function costfun(peps::InfinitePEPS, env::SymmetricEnv, O::LocalOperator)
-    return costfun(peps, CTMRGEnv(env), O)
+function cost_function(peps::InfinitePEPS, env::SymmetricEnv, O::LocalOperator)
+    return cost_function(peps, CTMRGEnv(env), O)
 end
 
 #
@@ -32,14 +32,14 @@ end
 
 # fixed-point transfer functions
 
-# pass arguments for regular symmetric application
+# duplicate arguments for use in forward computation
 function fp_transfer_west(
     ::Val{F}, A::MPSKit.GenericMPSTensor{S,3}, X::MPSKit.MPSBondTensor{S}, O::PEPSSandwich
 ) where {F,S}
     return fp_transfer_west(Val(F), A, A, A, X, X, O)
 end
 
-# expanded calls for use in derivatives
+# expanded calls for use backward pass
 function fp_transfer_west(
     ::Val{:real},
     AN::MPSKit.GenericMPSTensor{S,3},

@@ -37,11 +37,12 @@ opt_alg = PEPSOptimize(;
     # ),
     gradient_alg=LSSolver(;
         solver=KrylovKit.LSMR(;
-            maxiter=500, tol=PEPSKit.Defaults.fpgrad_tol, verbosity=1, krylovdim=500
+            maxiter=500, tol=PEPSKit.Defaults.fpgrad_tol, verbosity=1, krylovdim=500 # TODO: figure out why I need to blow up the Krylovdim so much...
         ),
         iterscheme=:rectangular, # might just be working now...
     ),
     reuse_env=true,
+    symmetrization=symm,
 )
 
 symm_tol = 1e-10
@@ -84,7 +85,7 @@ end
 env₀, N, ϵ = leading_boundary(PullingThroughEnv(ψ₀, ℂ^χenv), ψ₀, pt_alg)
 ψ₀ = ψ₀ / sqrt(N)
 
-result = fixedpoint(ψ₀, H, opt_alg, env₀; symmetrization=symm, (finalize!)=(my_finalize!))
+result = fixedpoint(H, ψ₀, env₀, opt_alg; (finalize!)=(my_finalize!))
 @show result.E
 
 nothing

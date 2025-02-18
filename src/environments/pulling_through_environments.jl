@@ -433,6 +433,8 @@ function symmetric_environment(
 
     isapprox(abs(λ), 1.0; atol=tol_conv) ||
         @warn "Requiring physical unitary other than the spaceflip, probably something went wrong"
+
+    # TODO: get rid of this whole thing, and just add virtual flippers everywhere...
     while !isapprox(abs(λ), 1.0; atol=tol_conv) && iter < maxiter
         iter += 1
         verbosity > 1 && @info "Symmetrization at iter=$iter: abs(λ)=$(abs(λ))"

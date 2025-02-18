@@ -50,7 +50,7 @@ ctm_envinit = CTMRGEnv(ctm_state, ℂ^χ)
 ctm_finalize = ctm_error_tracker(ctm_errs, ctm_envinit)
 ctm_alg = SimultaneousCTMRG(; tol=1e-12, maxiter=1000, verbosity=2, finalize=ctm_finalize)
 
-ctm_env = leading_boundary(CTMRGEnv(ctm_state, ℂ^χ), ctm_state, ctm_alg)
+ctm_env, = leading_boundary(CTMRGEnv(ctm_state, ℂ^χ), ctm_state, ctm_alg)
 ctm_λ = abs(PEPSKit.value(ctm_state, ctm_env))
 
 ## VUMPS
