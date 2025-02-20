@@ -33,13 +33,10 @@ gradient_alg = LinSolver(;
 optimization_alg = LBFGS(; gradtol=1e-4, verbosity=3)
 reuse_env = true
 
-# virtual spaces
-Nspaces = [Vpeps Vpeps; Vpeps Vpeps]
-Espaces = [Vpeps Vpeps; Vpeps Vpeps]
-
 # shift Hamiltonian and record shifted physical spaces
-H1 = heisenberg_XXZ(ComplexF64, U1Irrep, InfiniteSquare(2, 2); J=1.0, Delta=1.0, spin=1//2)
-H, Pspaces = add_physical_charge(H1, Saux)
+H0 = heisenberg_XXZ(ComplexF64, U1Irrep, InfiniteSquare(2, 2); J=1.0, Delta=1.0, spin=1//2)
+H, = add_physical_charge(H0, Saux)
+Pspaces = H.lattice
 
 # Part I: naive optimization using a 2-site unit cell
 # ---------------------------------------------------
@@ -64,14 +61,14 @@ pepsopt_alg = PEPSOptimize(;
     gradient_alg=gradient_alg,
     reuse_env=reuse_env,
 )
-result = fixedpoint(H, ψ₀, env₀, pepsopt_alg)
+ψ, env, E, info = fixedpoint(H, result[1], env₀, pepsopt_alg)
 
 @info "Finished $mode"
 
-numfg = result.numfg
-E = result.E
+numfg = info.fg_evaluations
+numiter = length(info.costs)
 
-@info "Energy: $E\t numfg: $numfg\t numiter: ???"
+@info "Energy: $E\t numfg: $numfg\t numiter: $numiter"
 
 # Part II: spatial and charge conjugation symmetry, trivial flipper
 # -----------------------------------------------------------------
@@ -80,7 +77,7 @@ mode = "spatial and charge-conjugation symmetry, using trivial flipper"
 
 @info "Running $mode"
 
-# cannot use manifestly spatially symmetric tensors when also imposing U1 charge conjugation...
+# cannot use manifestly spatially symmetric tensors with a staggered symmetry
 
 ## Setup
 

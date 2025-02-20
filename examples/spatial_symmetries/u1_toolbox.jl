@@ -6,6 +6,7 @@ using ChainRulesCore
 
 ## Heisenberg XXZ model
 
+# TODO: add to PEPSKit
 function MPSKitModels.heisenberg_XXZ(
     T::Type{<:Number},
     S::Type{<:Sector},
@@ -24,7 +25,6 @@ function MPSKitModels.heisenberg_XXZ(
     return LocalOperator(
         spaces, (neighbor => h for neighbor in nearest_neighbours(lattice))...
     )
-    return nothing
 end
 
 ## U1-style symmetrization
@@ -69,8 +69,9 @@ end
 
 ## U1 symmetric unit cell
 
-function u1_flipper(A::PEPSTensor{U1Space}, i::Int)
-    I = isomorphism(flip(space(A, i)), space(A, i))
+u1_flipper(A::PEPSTensor, i::Int) = u1_flipper(space(A, i))
+function u1_flipper(S::U1Space)
+    I = isomorphism(flip(S), S)
     X = -1 * I # all blocks with nontrivial charge get a minus sign
     block(X, U1Irrep(0)) .*= -1 # but zero charge block is still just the identity
     return X
@@ -104,7 +105,7 @@ end
 function u1_spaceflip(A::PEPSTensor{U1Space})
     @tensor A´[-1; -2 -3 -4 -5] :=
         A[1; 2 3 4 5] *
-        u1_flipper(A, 1)[-1; 1] *
+        u1_flipper(A, 1)[-1; 1] * # TODO: this should probably be a regular flipper?
         u1_flipper(A, 2)[-2; 2] *
         u1_flipper(A, 3)[-3; 3] *
         u1_flipper(A, 4)[-4; 4] *

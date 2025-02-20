@@ -45,7 +45,7 @@ end
 
 # spaces
 symmetry = U1Irrep
-Vpeps = U1Space(0 => 2, 1//2 => 1, -1//2 => 1) # TODO: play around with this
+Vpeps = U1Space(0 => 2, 1//2 => 1, -1//2 => 1) # TODO: play around with this, but make sure it's always self-dual
 Venv = U1Space(0 => 4, 1//2 => 2, -1//2 => 2, 1 => 2, -1 => 2) # TODO: seed with a dynamic pass...
 
 # uniform auxiliary physical charge, for uniform half-filling

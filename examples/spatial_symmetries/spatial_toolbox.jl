@@ -26,10 +26,11 @@ struct Symmetric <: UnitCellStyle end # 2x2 unit cell, symmetric bond absorption
 
 # Filling up a PEPS unit cell
 # ---------------------------
-flipper(A::PEPSTensor, i::Int) = isomorphism(flip(space(A, i)), space(A, i))
+flipper(A::PEPSTensor, i::Int) = flipper(space(A, i))
+flipper(S::ElementarySpace) = isomorphism(flip(S), S)
 
 # fill up InfinitePEPS unit cell from a single PEPSTensor
-function fill_peps(A::PEPSTensor, ::Symmetric)
+function fill_peps(A::PEPSTensor, ::Symmetric)::InfinitePEPS
     @tensor B[-1; -2 -3 -4 -5] :=
         A[-1; 1 2 3 4] *
         flipper(A, 2)[-2; 1] *
@@ -38,9 +39,9 @@ function fill_peps(A::PEPSTensor, ::Symmetric)
         flipper(A, 5)[-5; 4]
     return InfinitePEPS([A B; B A])
 end
-function fill_peps(A::PEPSTensor, ::Asymmetric)
+function fill_peps(A::PEPSTensor, ::Asymmetric)::InfinitePEPS
     @tensor A´[-1; -2 -3 -4 -5] :=
-        A[-1; 1 2 -4 -5] * flipper(A, 2)[-2; 1] * flipper(A, 3)[-3; 2]
+        A[-1; -2 -3 1 2] * flipper(A, 4)[-4; 1] * flipper(A, 5)[-5; 2]
     return InfinitePEPS(A´)
 end
 
