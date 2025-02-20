@@ -51,7 +51,7 @@ ctm_alg = SimultaneousCTMRG(; tol=1e-10, maxiter=500, verbosity=3, trscheme)
 # )
 gradient_alg = EigSolver(;
     solver=Arnoldi(; tol=1e-8, maxiter=30, verbosity=3, krylovdim=30, eager=true),
-    iterscheme=:fixed,
+    iterscheme=:diffgauge,
 )
 
 reuse_env = true
