@@ -45,6 +45,9 @@ function fill_peps(A::PEPSTensor, ::Asymmetric)::InfinitePEPS
     return InfinitePEPS(A´)
 end
 
+lattice(::Asymmetric) = InfiniteSquare(1, 1)
+lattice(::Symmetric) = InfiniteSquare(2, 2)
+
 # Symmetry operations on PEPS tensors
 # -----------------------------------
 

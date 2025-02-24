@@ -59,5 +59,5 @@ function add_physical_charge(H::LocalOperator, charges::AbstractMatrix{<:Sector}
     end
     H´ = LocalOperator(Pspaces, new_terms...)
 
-    return H´, Pspaces
+    return H´
 end

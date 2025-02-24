@@ -100,6 +100,9 @@ function fill_peps(A::PEPSTensor{U1Space}, ::U1XSymmetric)
     return InfinitePEPS([A B; B A])
 end
 
+lattice(::U1Symmetric) = InfiniteSquare(2, 2)
+lattice(::U1XSymmetric) = InfiniteSquare(2, 2)
+
 ## custom U1 spatial symmetry conditions for this use case
 
 function u1_spaceflip(A::PEPSTensor{U1Space})

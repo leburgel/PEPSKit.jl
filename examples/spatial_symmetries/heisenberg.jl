@@ -10,6 +10,11 @@ using OptimKit
 
 include("spatial_toolbox.jl")
 
+# model
+Jx = -1.0
+Jy = 1.0
+Jz = -1.0
+
 # parameters
 χbond = 2
 χenv = 20
@@ -36,13 +41,10 @@ unitcell_style = Asymmetric()
 # unitcell_style = Symmetric()
 
 # square lattice Heisenberg Hamiltonian
-heisenberg_ham(::Asymmetric) = heisenberg_XYZ(InfiniteSquare(); Jx=-1, Jy=1, Jz=-1)
-heisenberg_ham(::Symmetric) = repeat(heisenberg_ham(Asymmetric()), 2, 2)
-
-H = heisenberg_ham(unitcell_style)
+H = heisenberg_XYZ(lattice(unitcell_style); Jx, Jy, Jz)
 
 # spaces
-P = ℂ^2
+P = first(H.lattice)
 Vpeps = ℂ^χbond
 Venv = ℂ^χenv
 

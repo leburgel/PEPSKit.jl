@@ -45,12 +45,12 @@ t_test = 1
 # define algorithms
 trscheme = FixedSpaceTruncation()
 # trscheme = truncbelow(1e-4) & truncdim(5 * χ)
-ctm_alg = SimultaneousCTMRG(; tol=1e-10, maxiter=500, verbosity=3, trscheme)
+ctm_alg = SimultaneousCTMRG(; tol=1e-8, maxiter=500, verbosity=2, trscheme)
 # gradient_alg = LinSolver(;
 #     solver=GMRES(; tol=1e-6, maxiter=3, verbosity=3), iterscheme=:diffgauge
 # )
 gradient_alg = EigSolver(;
-    solver=Arnoldi(; tol=1e-8, maxiter=30, verbosity=3, krylovdim=30, eager=true),
+    solver=Arnoldi(; tol=1e-6, maxiter=30, verbosity=3, krylovdim=30, eager=true),
     iterscheme=:diffgauge,
 )
 
@@ -69,7 +69,7 @@ H_t = hubbard_model(
     ComplexF64, particle_symmetry, spin_symmetry, lattice; t=t_test, U=U_test
 )
 
-H_t, = add_physical_charge(H_t, fill(Saux, size(H_t.lattice)...))
+H_t = add_physical_charge(H_t, fill(Saux, size(H_t.lattice)...))
 Pspaces = H_t.lattice
 
 # Part 0: use default PEPSKit.fixedpoint

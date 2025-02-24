@@ -74,16 +74,10 @@ symm_style = U1HReflectionRotation() # so we need charge conjugation to make thi
 # unitcell_style = Asymmetric()
 unitcell_style = Symmetric()
 
-# square lattice Bose-Hubbard Hamiltonian
-bose_hubbard_ham(::Asymmetric, args...; kwargs...) = bose_hubbard_model(args...; kwargs...)
-function bose_hubbard_ham(::Symmetric, args...; kwargs...)
-    return repeat(bose_hubbard_ham(Asymmetric(), args...; kwargs...), 2, 2)
-end
-
-# shift Hamiltonian and record shifted physical spaces
-H1 = bose_hubbard_ham(unitcell_style, symmetry, InfiniteSquare(); t, U, cutoff)
-H, Pspaces = add_physical_charge(H1, fill(Saux, size(H1.lattice)))
-P = first(Pspaces) # uniform physical space
+# shifted square lattice Bose-Hubbard Hamiltonian
+H0 = bose_hubbard_model(symmetry, lattice(unitcell_style); t, U, cutoff)
+H = add_physical_charge(H0, fill(Saux, size(H0.lattice)))
+P = first(H.lattice) # uniform physical space
 
 # Part I: manually imposing symmetries in gradient computation and retraction
 # ---------------------------------------------------------------------------
