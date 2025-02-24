@@ -98,8 +98,8 @@ env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 
-peps_cfun, peps_retract, peps_inner = peps_opt_costfunction(;
-    boundary_alg, gradient_alg, reuse_env, unitcell_style, symm_style
+peps_cfun, peps_retract, peps_inner = peps_opt_costfunction(
+    H; boundary_alg, gradient_alg, reuse_env, unitcell_style, symm_style
 )
 
 (A, env), f, g = optimize(
@@ -119,7 +119,7 @@ env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 ## Optimization
 
 vector_cfun, vector_retract, vector_inner = vector_opt_costfunction(
-    P, Vpeps; boundary_alg, gradient_alg, reuse_env, unitcell_style, symm_style
+    H, P, Vpeps; boundary_alg, gradient_alg, reuse_env, unitcell_style, symm_style
 )
 
 (a, env), f, g, numfg, history = optimize(

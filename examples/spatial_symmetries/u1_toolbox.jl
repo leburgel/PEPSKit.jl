@@ -105,7 +105,7 @@ end
 function u1_spaceflip(A::PEPSTensor{U1Space})
     @tensor A´[-1; -2 -3 -4 -5] :=
         A[1; 2 3 4 5] *
-        u1_flipper(A, 1)[-1; 1] * # TODO: this should probably be a regular flipper?
+        flipper(A, 1)[-1; 1] * # TODO: this should have always been a regular flipper?
         u1_flipper(A, 2)[-2; 2] *
         u1_flipper(A, 3)[-3; 3] *
         u1_flipper(A, 4)[-4; 4] *

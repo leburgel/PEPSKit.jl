@@ -127,7 +127,8 @@ vec2peps(a::Vector{<:Real}, A_basis::Vector{<:PEPSTensor}) = sum(a .* A_basis)
 # PEPS optimization with manual symmetrization
 # --------------------------------------------
 
-function peps_opt_costfunction(;
+function peps_opt_costfunction(
+    H;
     boundary_alg=SimultaneousCTMRG(),
     gradient_alg=LinSolver(),
     reuse_env=true,
@@ -168,6 +169,7 @@ end
 # --------------------------------------------
 
 function vector_opt_costfunction(
+    H,
     P::S,
     V::S;
     boundary_alg=SimultaneousCTMRG(),
