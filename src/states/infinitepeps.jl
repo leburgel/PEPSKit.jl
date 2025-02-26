@@ -209,6 +209,15 @@ end
 
 ## Chainrules
 
+function ChainRulesCore.rrule(::Type{InfinitePEPS}, A::Matrix{<:PEPSTensor})
+    network = InfinitePEPS(A)
+    function InfinitePEPS_pullback(Δnetwork_)
+        Δnetwork = unthunk(Δnetwork_)
+        return NoTangent(), unitcell(Δnetwork)
+    end
+    return network, InfinitePEPS_pullback
+end
+
 function ChainRulesCore.rrule(::typeof(Base.getindex), network::InfinitePEPS, args...)
     tensor = network[args...]
 
