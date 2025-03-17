@@ -27,10 +27,11 @@ Saux = [
 boundary_alg = SimultaneousCTMRG(;
     trscheme=FixedSpaceTruncation(), tol=1e-10, miniter=3, maxiter=100, verbosity=2
 )
-gradient_alg = LinSolver(;
-    solver=GMRES(; tol=1e-6, maxiter=10, verbosity=2), iterscheme=:diffgauge
-) # :diffgauge necessary for :sequential CTMRG scheme
-optimization_alg = LBFGS(; gradtol=1e-4, verbosity=3)
+gradient_alg = EigSolver(;
+    solver=Arnoldi(; tol=1e-6, maxiter=10, verbosity=2, eager=true), iterscheme=:diffgauge
+) # TODO: play around with fpgradient algorithm and see which one is better...
+optimization_alg = LBFGS(; gradtol=1e-4, verbosity=3, maxiter=200)
+# TODO: play around with linesearch, see which one is better
 reuse_env = true
 
 # shift Hamiltonian and record shifted physical spaces
@@ -81,6 +82,7 @@ mode = "spatial and charge-conjugation symmetry, using trivial flipper"
 
 ## Setup
 
+# symm_style = None()
 # symm_style = Rotation()
 # symm_style = U1HReflection()
 symm_style = U1HReflectionRotation()
@@ -106,7 +108,7 @@ peps_cfun, peps_retract, peps_inner = peps_opt_costfunction(
 
 @info "Finished $mode"
 
-@info "Energy: $E\t numfg: $numfg\t numiter: $(length(history[2]))"
+@info "Energy: $f\t numfg: $numfg\t numiter: $(length(history[2]))"
 
 # Part III: spatial and charge conjugation symmetry, NONTRIVIAL FLIPPER -> WORKING
 # ---------------------------------------------------------------------
@@ -144,4 +146,4 @@ peps_cfun, peps_retract, peps_inner = peps_opt_costfunction(
 
 @info "Finished $mode"
 
-@info "Energy: $E\t numfg: $numfg\t numiter: $(length(history[2]))"
+@info "Energy: $f\t numfg: $numfg\t numiter: $(length(history[2]))"

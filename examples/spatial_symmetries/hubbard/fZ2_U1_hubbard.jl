@@ -4,12 +4,10 @@ using Revise
 
 # # use slightly hacked forks of KrylovKit and OptimKit
 # import Pkg
-# Pkg.add(; url="https://github.com/leburgel/KrylovKit.jl", rev="lb/relax_realeigsolve")
 # Pkg.add(; url="https://github.com/leburgel/OptimKit.jl", rev="lb/hack_backtracking")
 
 using TensorKit
 using PEPSKit
-using MPSKitModels: hubbard_model, e_plusmin, e_minplus, e_number, e_number_updown
 using OptimKit
 using KrylovKit
 
@@ -27,7 +25,7 @@ spin_symmetry = Trivial
 S = fermion ⊠ particle_symmetry # symmetry sector
 
 # define lattice and virtual spaces
-lattice = InfiniteSquare(2, 2)
+latt = InfiniteSquare(2, 2)
 D = 1
 Vpeps = Vect[S]((0, 0) => 2 * D, (1, 1) => D, (1, -1) => D)
 χ = 2
@@ -39,16 +37,13 @@ Venv = Vect[S](
 Saux = S((1, -1))
 
 # define hamiltonian parameters; should give E = 4 * -0.5244140625...
-U_test = 8
-t_test = 1
+U = 8.0
+t = 1.0
 
 # define algorithms
 trscheme = FixedSpaceTruncation()
 # trscheme = truncbelow(1e-4) & truncdim(5 * χ)
 ctm_alg = SimultaneousCTMRG(; tol=1e-8, maxiter=500, verbosity=2, trscheme)
-# gradient_alg = LinSolver(;
-#     solver=GMRES(; tol=1e-6, maxiter=3, verbosity=3), iterscheme=:diffgauge
-# )
 gradient_alg = EigSolver(;
     solver=Arnoldi(; tol=1e-6, maxiter=30, verbosity=3, krylovdim=30, eager=true),
     iterscheme=:diffgauge,
@@ -65,10 +60,7 @@ optimization_alg = LBFGS(
 
 ## Initialize and shift Hamiltonian
 
-H_t = hubbard_model(
-    ComplexF64, particle_symmetry, spin_symmetry, lattice; t=t_test, U=U_test
-)
-
+H_t = hubbard_model(ComplexF64, particle_symmetry, spin_symmetry, latt; t, U)
 H_t = add_physical_charge(H_t, fill(Saux, size(H_t.lattice)...))
 Pspaces = H_t.lattice
 
