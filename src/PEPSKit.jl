@@ -127,6 +127,7 @@ Module containing default algorithm parameter values and arguments.
 """
 module Defaults
     using TensorKit, KrylovKit, OptimKit, OhMyThreads
+    using MPSKit: DynamicTol
     using PEPSKit:
         LinSolver,
         FixedSpaceTruncation,
@@ -149,6 +150,37 @@ module Defaults
     const ctmrg_alg = SimultaneousCTMRG(
         ctmrg_tol, ctmrg_maxiter, ctmrg_miniter, 2, projector_alg, finalize
     )
+
+    # Pulling-through
+    const pt_tol = 1e-8
+    const pt_maxiter = 100
+    const pt_miniter = 4
+    const pt_verbosity = 2
+
+    const dynamic_tols = true
+    const tol_min = 1e-14
+    const tol_max = 1e-4
+
+    const gauge_maxiter = 200
+    const tolgauge = 1e-13
+    const alg_orth = Polar()
+    const gauge_tolfactor = 1e-6
+
+    const eigs_tolfactor = 1e-3
+
+    function pt_alg_gauge(;
+        tol=tolgauge,
+        maxiter=gauge_maxiter,
+        verbosity=1,
+        alg_orth=alg_orth,
+        dynamic_tols=dynamic_tols,
+        tol_min=tol_min,
+        tol_max=tol_max,
+        tol_factor=gauge_tolfactor,
+    )
+        alg = (; tol, maxiter, verbosity, alg_orth)
+        return dynamic_tols ? DynamicTol(alg, tol_min, tol_max, tol_factor) : alg
+    end
 
     # Optimization
     const fpgrad_maxiter = 30

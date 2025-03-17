@@ -1,23 +1,20 @@
-_get_tol(x) = x.tol
-_get_tol(x::MPSKit.DynamicTol) = x.alg.tol
-
 """
     PullingThrough
 
 Pulling-through contraction algorithm.
 """
 @kwdef struct PullingThrough{F}
-    tol::Float64 = Defaults.ctmrg_tol
-    maxiter::Int = Defaults.ctmrg_maxiter
-    verbosity::Int = 1
+    tol::Float64 = Defaults.pt_tol
+    maxiter::Int = Defaults.pt_maxiter
+    miniter::Int = Defaults.pt_miniter
+    verbosity::Int = Defaults.pt_verbosity
     finalize::F = Defaults._finalize
 
-    dynamic_tols::Bool = true
-    alg_gauge = MPSKit.Defaults.alg_gauge(;
-        verbosity=1, maxiter=100, tol=1e-14, tol_factor=1e-8, dynamic_tols
-    )
+    dynamic_tols::Bool = Defaults.dynamic_tols
+    alg_gauge = Defaults.pt_alg_gauge()
+    pr_alg_eigsolve = Defaults.pt_alg_gauge(; dynamic_tols)
     alg_eigsolve = MPSKit.Defaults.alg_eigsolve(;
-        ishermitian=false, tol=1e-14, tol_factor=1e-6, dynamic_tols
+        ishermitian=false, tol=1e-14, tol_factor=Defaults.eigs_tolfactor, dynamic_tols
     )
 end
 

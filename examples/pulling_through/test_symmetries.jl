@@ -8,7 +8,6 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 using Revise
 
 using LinearAlgebra
-using TensorOperations
 using TensorKit
 using MPSKit
 using MPSKitModels

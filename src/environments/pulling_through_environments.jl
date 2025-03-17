@@ -129,7 +129,10 @@ function gauge_north(env::PullingThroughEnv, alg_gauge)
         env.LN
     end
     leftorth_alg = MPSKit.LeftCanonical(;
-        tol=alg_gauge.tol, maxiter=alg_gauge.maxiter, verbosity=alg_gauge.verbosity
+        tol=alg_gauge.tol,
+        maxiter=alg_gauge.maxiter,
+        verbosity=alg_gauge.verbosity,
+        alg_orth=alg_gauge.alg_orth,
     )
     AL = MPSKit.PeriodicArray([copy(N)])
     C = MPSKit.PeriodicArray([copy(LN0)])
@@ -151,7 +154,10 @@ function gauge_west(env::PullingThroughEnv, alg_gauge)
     end
 
     rightorth_alg = MPSKit.RightCanonical(;
-        tol=alg_gauge.tol, maxiter=alg_gauge.maxiter, verbosity=alg_gauge.verbosity
+        tol=alg_gauge.tol,
+        maxiter=alg_gauge.maxiter,
+        verbosity=alg_gauge.verbosity,
+        alg_orth=alg_gauge.alg_orth,
     )
     AR = MPSKit.PeriodicArray([copy(W)])
     C = MPSKit.PeriodicArray([copy(RW0)])
