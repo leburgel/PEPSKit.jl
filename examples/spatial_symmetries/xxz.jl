@@ -4,11 +4,10 @@ using KrylovKit
 using TensorKit
 using PEPSKit
 using OptimKit
-using MPSKitModels: heisenberg_XXZ
+using MPSKit: add_physical_charge
 
-include("spatial_toolbox.jl")
-include("u1_toolbox.jl")
-include("space_shifting.jl")
+include(joinpath(@__DIR__, "spatial_toolbox.jl"))
+include(joinpath(@__DIR__, "u1_toolbox.jl"))
 
 # Part 0: Setup
 # -------------
@@ -24,13 +23,16 @@ Saux = [
 
 # parameters
 χenv = 18
+optim_maxiter = 100
+gradient_iterscheme = :diffgauge
 boundary_alg = SimultaneousCTMRG(;
-    trscheme=FixedSpaceTruncation(), tol=1e-10, miniter=3, maxiter=100, verbosity=2
+    trscheme=FixedSpaceTruncation(), tol=1e-8, miniter=3, maxiter=100, verbosity=2
 )
 gradient_alg = EigSolver(;
-    solver=Arnoldi(; tol=1e-6, maxiter=10, verbosity=2, eager=true), iterscheme=:diffgauge
+    solver_alg=Arnoldi(; tol=1e-6, maxiter=10, verbosity=2, eager=true),
+    iterscheme=gradient_iterscheme,
 ) # TODO: play around with fpgradient algorithm and see which one is better...
-optimization_alg = LBFGS(; gradtol=1e-4, verbosity=3, maxiter=200)
+optimizer_alg = LBFGS(; gradtol=1e-4, verbosity=3, maxiter=optim_maxiter)
 # TODO: play around with linesearch, see which one is better
 reuse_env = true
 
@@ -56,13 +58,8 @@ env₀, = leading_boundary(env₀, ψ₀, boundary_alg)
 
 ## Optimize
 
-pepsopt_alg = PEPSOptimize(;
-    boundary_alg=boundary_alg,
-    optimizer=optimization_alg,
-    gradient_alg=gradient_alg,
-    reuse_env=reuse_env,
-)
-ψ, env, E, info = fixedpoint(H, result[1], env₀, pepsopt_alg)
+pepsopt_alg = PEPSOptimize(; boundary_alg, optimizer_alg, gradient_alg, reuse_env)
+ψ, env, E, info = fixedpoint(H, ψ₀, env₀, pepsopt_alg)
 
 @info "Finished $mode"
 
@@ -92,18 +89,23 @@ unitcell_style = U1Symmetric()
 ## Initialization
 
 A0 = TensorMap(randn, ComplexF64, Pspaces[1, 1] ← Vpeps ⊗ Vpeps ⊗ Vpeps ⊗ Vpeps)
-A0 = symmetrize(A0, symm_style)
+A0 = normalize(symmetrize(A0, symm_style))
 ψ₀ = fill_peps(A0, unitcell_style)
 env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 
-peps_cfun, peps_retract, peps_inner = peps_opt_costfunction(
+peps_cfun, peps_inner, peps_retract, peps_transport! = peps_opt_costfunction(
     H; boundary_alg, gradient_alg, reuse_env, unitcell_style, symm_style
 )
 
 (A, env), f, g, numfg, history = optimize(
-    peps_cfun, (A0, env₀), optimization_alg; retract=peps_retract, inner=peps_inner
+    peps_cfun,
+    (A0, env₀),
+    optimizer_alg;
+    inner=peps_inner,
+    retract=peps_retract,
+    (transport!)=(peps_transport!),
 );
 
 @info "Finished $mode"
@@ -130,18 +132,23 @@ unitcell_style = U1XSymmetric()
 ## Initialization
 
 A0 = TensorMap(randn, ComplexF64, Pspaces[1, 1] ← Vpeps ⊗ Vpeps ⊗ Vpeps ⊗ Vpeps)
-A0 = symmetrize(A0, symm_style)
+A0 = normalize(symmetrize(A0, symm_style))
 ψ₀ = fill_peps(A0, unitcell_style)
 env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 
-peps_cfun, peps_retract, peps_inner = peps_opt_costfunction(
+peps_cfun, peps_inner, peps_retract, peps_transport! = peps_opt_costfunction(
     H; boundary_alg, gradient_alg, reuse_env, unitcell_style, symm_style
 )
 
 (A, env), f, g, numfg, history = optimize(
-    peps_cfun, (A0, env₀), optimization_alg; retract=peps_retract, inner=peps_inner
+    peps_cfun,
+    (A0, env₀),
+    optimizer_alg;
+    inner=peps_inner,
+    retract=peps_retract,
+    (transport!)=(peps_transport!),
 );
 
 @info "Finished $mode"

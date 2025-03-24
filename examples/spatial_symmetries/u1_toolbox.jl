@@ -1,31 +1,7 @@
 using TensorKit
 using PEPSKit
 using PEPSKit: PEPSTensor
-using MPSKitModels: MPSKitModels, heisenberg_XXZ, S_plusmin, S_minplus, S_zz
 using ChainRulesCore
-
-## Heisenberg XXZ model
-
-# TODO: add to PEPSKit
-function MPSKitModels.heisenberg_XXZ(
-    T::Type{<:Number},
-    S::Type{<:Sector},
-    lattice::InfiniteSquare;
-    J=1.0,
-    Delta=1.0,
-    spin=1//2,
-)
-    h =
-        J * (
-            (S_plusmin(T, S; spin=spin) + S_minplus(T, S; spin=spin)) / 2 +
-            Delta * S_zz(T, S; spin=spin)
-        )
-    rmul!(h, 1 / 4)
-    spaces = fill(domain(h)[1], (lattice.Nrows, lattice.Ncols))
-    return LocalOperator(
-        spaces, (neighbor => h for neighbor in nearest_neighbours(lattice))...
-    )
-end
 
 ## U1-style symmetrization
 

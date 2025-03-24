@@ -1,11 +1,10 @@
-# import Pkg
-# Pkg.add(url="https://github.com/tangwei94/SpatiallySymmetricTensors.jl", rev="main")
-
 using TensorKit
 using PEPSKit
-using PEPSKit: PEPSTensor
 using SpatiallySymmetricTensors
-using Zygote
+
+using PEPSKit: PEPSTensor
+using Zygote: withgradient
+using ChainRulesCore: ignore_derivatives
 
 # Style definitions
 # -----------------
@@ -155,17 +154,8 @@ function peps_opt_costfunction(
         return E, g
     end
 
-    function peps_retract(x, η, α)
-        A = deepcopy(x[1])
-        A += η * α
-        env = deepcopy(x[2])
-        A = symmetrize(A, symm_style)
-        return (A, env), η
-    end
-
-    peps_inner(_, η₁, η₂) = real(dot(η₁, η₂))
-
-    return peps_cfun, peps_retract, peps_inner
+    # inner, retract and transport! can be reused directly from PEPSKit
+    return peps_cfun, PEPSKit.real_inner, vector_retract, vector_transport!
 end
 
 # Vector optimization with manifest symmetries
@@ -199,14 +189,22 @@ function vector_opt_costfunction(
         return E, only(g)
     end
 
-    function vector_retract(x, η, α)
-        a = deepcopy(x[1])
-        a += η * α
-        env = deepcopy(x[2])
-        return (a, env), η
-    end
+    # inner, retract and transport! can be reused directly from PEPSKit
+    return vector_cfun, PEPSKit.real_inner, vector_retract, vector_transport!
+end
 
-    vector_inner(_, η₁, η₂) = dot(η₁, η₂)
+# Norm-preserving retractions
+# ---------------------------
 
-    return vector_cfun, vector_retract, vector_inner
+# can reuse the actual norm-preserving  vector retraction and transport from PEPSKit.jl
+# just have to plumb in the environments in the usual way
+
+function vector_retract(x, η, α)
+    A´, ξ = PEPSKit.norm_preserving_retract(x[1], η, α)
+    return (A´, deepcopy(x[2])), ξ
+end
+
+function vector_transport!(ξ, x, η, α, x´)
+    PEPSKit.norm_preserving_transport!(ξ, x[1], η, α, x´[1])
+    return ξ
 end
