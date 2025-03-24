@@ -53,116 +53,203 @@ function cost_function(peps::InfinitePEPS, env::CTMRGEnv, O::LocalOperator)
 end
 
 function LinearAlgebra.norm(peps::InfinitePEPS, env::CTMRGEnv)
-    total = one(scalartype(peps))
-
-    for r in 1:size(peps, 1), c in 1:size(peps, 2)
-        rprev = _prev(r, size(peps, 1))
-        rnext = _next(r, size(peps, 1))
-        cprev = _prev(c, size(peps, 2))
-        cnext = _next(c, size(peps, 2))
-        total *= @autoopt @tensor env.edges[WEST, r, cprev][χ1 D1 D2; χ2] *
-            env.corners[NORTHWEST, rprev, cprev][χ2; χ3] *
-            env.edges[NORTH, rprev, c][χ3 D3 D4; χ4] *
-            env.corners[NORTHEAST, rprev, cnext][χ4; χ5] *
-            env.edges[EAST, r, cnext][χ5 D5 D6; χ6] *
-            env.corners[SOUTHEAST, rnext, cnext][χ6; χ7] *
-            env.edges[SOUTH, rnext, c][χ7 D7 D8; χ8] *
-            env.corners[SOUTHWEST, rnext, cprev][χ8; χ1] *
-            peps[r, c][d; D3 D5 D7 D1] *
-            conj(peps[r, c][d; D4 D6 D8 D2])
-        total *= tr(
-            env.corners[NORTHWEST, rprev, cprev] *
-            env.corners[NORTHEAST, rprev, c] *
-            env.corners[SOUTHEAST, r, c] *
-            env.corners[SOUTHWEST, r, cprev],
-        )
-        total /= @autoopt @tensor env.edges[WEST, r, cprev][χ1 D1 D2; χ2] *
-            env.corners[NORTHWEST, rprev, cprev][χ2; χ3] *
-            env.corners[NORTHEAST, rprev, c][χ3; χ4] *
-            env.edges[EAST, r, c][χ4 D1 D2; χ5] *
-            env.corners[SOUTHEAST, rnext, c][χ5; χ6] *
-            env.corners[SOUTHWEST, rnext, cprev][χ6; χ1]
-        total /= @autoopt @tensor env.corners[NORTHWEST, rprev, cprev][χ1; χ2] *
-            env.edges[NORTH, rprev, c][χ2 D1 D2; χ3] *
-            env.corners[NORTHEAST, rprev, cnext][χ3; χ4] *
-            env.corners[SOUTHEAST, r, cnext][χ4; χ5] *
-            env.edges[SOUTH, r, c][χ5 D1 D2; χ6] *
-            env.corners[SOUTHWEST, r, cprev][χ6; χ1]
-    end
-
-    return total
+    return network_value(InfiniteSquareNetwork(peps), env)
 end
 
 """
-    value(partfunc::InfinitePartitionFunction, env::CTMRGEnv)
+    network_value(network::InfiniteSquareNetwork, env::CTMRGEnv)
 
-Return the value (per site) of a given partition function contracted using a given CTMRG
-environment.
+Return the value (per unit cell) of a given contractible network contracted using a given
+CTMRG environment.
 """
-function value(partfunc::InfinitePartitionFunction, env::CTMRGEnv)
-    total = one(scalartype(partfunc))
-
-    for r in 1:size(partfunc, 1), c in 1:size(partfunc, 2)
-        rprev = _prev(r, size(partfunc, 1))
-        rnext = _next(r, size(partfunc, 1))
-        cprev = _prev(c, size(partfunc, 2))
-        cnext = _next(c, size(partfunc, 2))
-        total *= @autoopt @tensor env.edges[WEST, r, cprev][χ1 D1; χ2] *
-            env.corners[NORTHWEST, rprev, cprev][χ2; χ3] *
-            env.edges[NORTH, rprev, c][χ3 D3; χ4] *
-            env.corners[NORTHEAST, rprev, cnext][χ4; χ5] *
-            env.edges[EAST, r, cnext][χ5 D5; χ6] *
-            env.corners[SOUTHEAST, rnext, cnext][χ6; χ7] *
-            env.edges[SOUTH, rnext, c][χ7 D7; χ8] *
-            env.corners[SOUTHWEST, rnext, cprev][χ8; χ1] *
-            partfunc[r, c][D1 D7; D3 D5]
-        total *= tr(
-            env.corners[NORTHWEST, rprev, cprev] *
-            env.corners[NORTHEAST, rprev, c] *
-            env.corners[SOUTHEAST, r, c] *
-            env.corners[SOUTHWEST, r, cprev],
-        )
-        total /= @autoopt @tensor env.edges[WEST, r, cprev][χ1 D1; χ2] *
-            env.corners[NORTHWEST, rprev, cprev][χ2; χ3] *
-            env.corners[NORTHEAST, rprev, c][χ3; χ4] *
-            env.edges[EAST, r, c][χ4 D1; χ5] *
-            env.corners[SOUTHEAST, rnext, c][χ5; χ6] *
-            env.corners[SOUTHWEST, rnext, cprev][χ6; χ1]
-        total /= @autoopt @tensor env.corners[NORTHWEST, rprev, cprev][χ1; χ2] *
-            env.edges[NORTH, rprev, c][χ2 D1; χ3] *
-            env.corners[NORTHEAST, rprev, cnext][χ3; χ4] *
-            env.corners[SOUTHEAST, r, cnext][χ4; χ5] *
-            env.edges[SOUTH, r, c][χ5 D1; χ6] *
-            env.corners[SOUTHWEST, r, cprev][χ6; χ1]
+function network_value(network::InfiniteSquareNetwork, env::CTMRGEnv)
+    return prod(Iterators.product(axes(network)...)) do (r, c)
+        return _contract_site((r, c), network, env) * _contract_corners((r, c), env) /
+               _contract_vertical_edges((r, c), env) /
+               _contract_horizontal_edges((r, c), env)
     end
-
-    return total
 end
+network_value(state, env::CTMRGEnv) = network_value(InfiniteSquareNetwork(state), env)
 
-function MPSKit.transfer_spectrum(
-    above::MultilineMPS,
-    O::MultilineTransferMatrix,
-    below::MultilineMPS;
-    num_vals=2,
-    solver=MPSKit.Defaults.eigsolver,
+"""
+    _contract_site(ind::Tuple{Int,Int}, network::InfiniteSquareNetwork, env::CTMRGEnv)
+
+Contract around a single site `ind` of a square network using a given CTMRG environment.
+"""
+function _contract_site(ind::Tuple{Int,Int}, network, env::CTMRGEnv)
+    r, c = ind
+    return _contract_site(
+        env.corners[NORTHWEST, _prev(r, end), _prev(c, end)],
+        env.corners[NORTHEAST, _prev(r, end), _next(c, end)],
+        env.corners[SOUTHEAST, _next(r, end), _next(c, end)],
+        env.corners[SOUTHWEST, _next(r, end), _prev(c, end)],
+        env.edges[NORTH, _prev(r, end), c],
+        env.edges[EAST, r, _next(c, end)],
+        env.edges[SOUTH, _next(r, end), c],
+        env.edges[WEST, r, _prev(c, end)],
+        network[r, c],
+    )
+end
+function _contract_site(
+    C_northwest,
+    C_northeast,
+    C_southeast,
+    C_southwest,
+    E_north::CTMRG_PEPS_EdgeTensor,
+    E_east::CTMRG_PEPS_EdgeTensor,
+    E_south::CTMRG_PEPS_EdgeTensor,
+    E_west::CTMRG_PEPS_EdgeTensor,
+    O::PEPSSandwich,
 )
-    @assert size(above) == size(O)
-    @assert size(below) == size(O)
+    return @autoopt @tensor E_west[χ_WSW D_W_above D_W_below; χ_WNW] *
+        C_northwest[χ_WNW; χ_NNW] *
+        E_north[χ_NNW D_N_above D_N_below; χ_NNE] *
+        C_northeast[χ_NNE; χ_ENE] *
+        E_east[χ_ENE D_E_above D_E_below; χ_ESE] *
+        C_southeast[χ_ESE; χ_SSE] *
+        E_south[χ_SSE D_S_above D_S_below; χ_SSW] *
+        C_southwest[χ_SSW; χ_WSW] *
+        ket(O)[d; D_N_above D_E_above D_S_above D_W_above] *
+        conj(bra(O)[d; D_N_below D_E_below D_S_below D_W_below])
+end
+function _contract_site(
+    C_northwest,
+    C_northeast,
+    C_southeast,
+    C_southwest,
+    E_north::CTMRG_PF_EdgeTensor,
+    E_east::CTMRG_PF_EdgeTensor,
+    E_south::CTMRG_PF_EdgeTensor,
+    E_west::CTMRG_PF_EdgeTensor,
+    O::PFTensor,
+)
+    return @autoopt @tensor E_west[χ_WSW D_W; χ_WNW] *
+        C_northwest[χ_WNW; χ_NNW] *
+        E_north[χ_NNW D_N; χ_NNE] *
+        C_northeast[χ_NNE; χ_ENE] *
+        E_east[χ_ENE D_E; χ_ESE] *
+        C_southeast[χ_ESE; χ_SSE] *
+        E_south[χ_SSE D_S; χ_SSW] *
+        C_southwest[χ_SSW; χ_WSW] *
+        O[D_W D_S; D_N D_E]
+end
 
-    numrows = size(above, 1)
-    eigenvals = Vector{Vector{scalartype(above)}}(undef, numrows)
+"""
+    _contract_corners(ind::Tuple{Int,Int}, env::CTMRGEnv)
 
-    @threads for cr in 1:numrows
-        L0 = MPSKit.randomize!(MPSKit.allocate_GL(above[cr - 1], O[cr], below[cr + 1], 1))
+Contract all corners around the south-east at position `ind` of the CTMRG
+environment `env`.
+"""
+function _contract_corners(ind::Tuple{Int,Int}, env::CTMRGEnv)
+    r, c = ind
+    return tr(
+        env.corners[NORTHWEST, _prev(r, end), _prev(c, end)] *
+        env.corners[NORTHEAST, _prev(r, end), c] *
+        env.corners[SOUTHEAST, r, c] *
+        env.corners[SOUTHWEST, r, _prev(c, end)],
+    )
+end
 
-        E_LL = MPSKit.TransferMatrix(above[cr - 1].AL, O[cr], below[cr + 1].AL)  # Note that this index convention is different from above!
-        λ, _, convhist = eigsolve(flip(E_LL), L0, num_vals, :LM, solver)
-        convhist.converged < num_vals &&
-            @warn "correlation length failed to converge: normres = $(convhist.normres)"
-        eigenvals[cr] = λ
-    end
+"""
+    _contract_vertical_edges(ind::Tuple{Int,Int}, env::CTMRGEnv)
 
-    return eigenvals
+Contract the vertical edges and corners around the east edge at position `ind` of the
+CTMRG environment `env`.
+"""
+function _contract_vertical_edges(ind::Tuple{Int,Int}, env::CTMRGEnv)
+    r, c = ind
+    return _contract_vertical_edges(
+        env.corners[NORTHWEST, _prev(r, end), _prev(c, end)],
+        env.corners[NORTHEAST, _prev(r, end), c],
+        env.corners[SOUTHEAST, _next(r, end), c],
+        env.corners[SOUTHWEST, _next(r, end), _prev(c, end)],
+        env.edges[EAST, r, c],
+        env.edges[WEST, r, _prev(c, end)],
+    )
+end
+@generated function _contract_vertical_edges(
+    C_northwest::CTMRGCornerTensor,
+    C_northeast::CTMRGCornerTensor,
+    C_southeast::CTMRGCornerTensor,
+    C_southwest::CTMRGCornerTensor,
+    E_east::CTMRGEdgeTensor{T,S,N},
+    E_west::CTMRGEdgeTensor{T,S,N},
+) where {T,S,N}
+    C_northwest_e = tensorexpr(:C_northwest, (envlabel(:NW),), (envlabel(:N),))
+    C_northeast_e = tensorexpr(:C_northeast, (envlabel(:N),), (envlabel(:NE),))
+    C_southeast_e = tensorexpr(:C_southeast, (envlabel(:SE),), (envlabel(:S),))
+    C_southwest_e = tensorexpr(:C_southwest, (envlabel(:S),), (envlabel(:SW),))
+
+    E_east_e = tensorexpr(
+        :E_east, (envlabel(:NE), ntuple(i -> virtuallabel(i), N - 1)...), (envlabel(:SE),)
+    )
+    E_west_e = tensorexpr(
+        :E_west, (envlabel(:SW), ntuple(i -> virtuallabel(i), N - 1)...), (envlabel(:NW),)
+    )
+
+    rhs = Expr(
+        :call,
+        :*,
+        E_west_e,
+        C_northwest_e,
+        C_northeast_e,
+        E_east_e,
+        C_southeast_e,
+        C_southwest_e,
+    )
+
+    return macroexpand(@__MODULE__, :(return @autoopt @tensor $rhs))
+end
+
+"""
+    _contract_horizontal_edges(ind::Tuple{Int,Int}, env::CTMRGEnv)
+
+Contract the horizontal edges and corners around the south edge at position `ind` of the
+CTMRG environment `env`.
+"""
+function _contract_horizontal_edges(ind::Tuple{Int,Int}, env::CTMRGEnv)
+    r, c = ind
+    return _contract_horizontal_edges(
+        env.corners[NORTHWEST, _prev(r, end), _prev(c, end)],
+        env.corners[NORTHEAST, _prev(r, end), _next(c, end)],
+        env.corners[SOUTHEAST, r, _next(c, end)],
+        env.corners[SOUTHWEST, r, _prev(c, end)],
+        env.edges[NORTH, _prev(r, end), c],
+        env.edges[SOUTH, r, c],
+    )
+end
+@generated function _contract_horizontal_edges(
+    C_northwest::CTMRGCornerTensor,
+    C_northeast::CTMRGCornerTensor,
+    C_southeast::CTMRGCornerTensor,
+    C_southwest::CTMRGCornerTensor,
+    E_north::CTMRGEdgeTensor{T,S,N},
+    E_south::CTMRGEdgeTensor{T,S,N},
+) where {T,S,N}
+    C_northwest_e = tensorexpr(:C_northwest, (envlabel(:W),), (envlabel(:NW),))
+    C_northeast_e = tensorexpr(:C_northeast, (envlabel(:NE),), (envlabel(:E),))
+    C_southeast_e = tensorexpr(:C_southeast, (envlabel(:E),), (envlabel(:SE),))
+    C_southwest_e = tensorexpr(:C_southwest, (envlabel(:SW),), (envlabel(:W),))
+
+    E_north_e = tensorexpr(
+        :E_north, (envlabel(:NW), ntuple(i -> virtuallabel(i), N - 1)...), (envlabel(:NE),)
+    )
+    E_south_e = tensorexpr(
+        :E_south, (envlabel(:SE), ntuple(i -> virtuallabel(i), N - 1)...), (envlabel(:SW),)
+    )
+
+    rhs = Expr(
+        :call,
+        :*,
+        C_northwest_e,
+        E_north_e,
+        C_northeast_e,
+        C_southeast_e,
+        E_south_e,
+        C_southwest_e,
+    )
+
+    return macroexpand(@__MODULE__, :(return @autoopt @tensor $rhs))
 end
 
 """
@@ -248,4 +335,60 @@ function product_peps(peps_args...; unitcell=(1, 1), noise_amp=1e-2, state_vecto
     prod_peps = InfinitePEPS(prod_tensors)
     ψ = prod_peps + noise_amp * noise_peps
     return ψ / norm(ψ)
+end
+
+# Contract local tensors
+
+"""
+    contract_local_tensor(inds, O::PFTensor, env)
+
+Contract a local tensor `O` inserted into a partition function `pf` at position `inds`,
+using the environment `env`.
+"""
+function contract_local_tensor(
+    inds::Tuple{Int,Int}, O::PFTensor, env::CTMRGEnv{C,<:CTMRG_PF_EdgeTensor}
+) where {C}
+    r, c = inds
+    return _contract_site(
+        env.corners[NORTHWEST, _prev(r, end), _prev(c, end)],
+        env.corners[NORTHEAST, _prev(r, end), _next(c, end)],
+        env.corners[SOUTHEAST, _next(r, end), _next(c, end)],
+        env.corners[SOUTHWEST, _next(r, end), _prev(c, end)],
+        env.edges[NORTH, _prev(r, end), c],
+        env.edges[EAST, r, _next(c, end)],
+        env.edges[SOUTH, _next(r, end), c],
+        env.edges[WEST, r, _prev(c, end)],
+        O,
+    )
+end
+
+"""
+    contract_local_tensor(inds, O::PEPOTensor, network, env)
+
+Contract a local tensor `O` inserted into the PEPO of a given `network` at position `inds`,
+using the environment `env`.
+"""
+function contract_local_tensor(
+    ind::Tuple{Int,Int,Int},
+    O::PEPOTensor,
+    network::InfiniteSquareNetwork{<:PEPOSandwich},
+    env::CTMRGEnv,
+)
+    r, c, h = ind
+    sandwich´ = Base.setindex(network[r, c], O, h + 2)
+    return _contract_site(
+        env.corners[NORTHWEST, _prev(r, end), _prev(c, end)],
+        env.corners[NORTHEAST, _prev(r, end), _next(c, end)],
+        env.corners[SOUTHEAST, _next(r, end), _next(c, end)],
+        env.corners[SOUTHWEST, _next(r, end), _prev(c, end)],
+        env.edges[NORTH, _prev(r, end), c],
+        env.edges[EAST, r, _next(c, end)],
+        env.edges[SOUTH, _next(r, end), c],
+        env.edges[WEST, r, _prev(c, end)],
+        sandwich´,
+    )
+end
+
+function contract_local_tensor(inds::CartesianIndex, O::AbstractTensorMap, env::CTMRGEnv)
+    return contract_local_tensor(Tuple(inds), O, env)
 end

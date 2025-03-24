@@ -1,15 +1,14 @@
 using Test
 using Random
+using LinearAlgebra
 using PEPSKit
 using TensorKit
-using LinearAlgebra
 using QuadGK
-using MPSKit
 
 ## Setup
 
 """
-    ising_exact(beta, J)
+    classical_ising_exact(beta, J)
 
 [Exact Onsager solution](https://en.wikipedia.org/wiki/Square_lattice_Ising_model#Exact_solution)
 for the 2D classical Ising Model with partition function
@@ -46,6 +45,7 @@ Implements the 2D classical Ising model with partition function
 """
 function classical_ising(; beta=log(1 + sqrt(2)) / 2, J=1.0)
     K = beta * J
+
     # Boltzmann weights
     t = ComplexF64[exp(K) exp(-K); exp(-K) exp(K)]
     r = eigen(t)
@@ -89,19 +89,18 @@ Random.seed!(81812781143)
 env0 = CTMRGEnv(Z, χenv)
 
 # cover all different flavors
-ctm_styles = [SequentialCTMRG, SimultaneousCTMRG]
-projector_algs = [HalfInfiniteProjector, FullInfiniteProjector]
+ctm_styles = [:sequential, :simultaneous]
+projector_algs = [:halfinfinite, :fullinfinite]
 
-@testset "Classical Ising partition function using $ctm_style with $projector_alg" for (
-    ctm_style, projector_alg
+@testset "Classical Ising partition function using $alg with $projector_alg" for (
+    alg, projector_alg
 ) in Iterators.product(
     ctm_styles, projector_algs
 )
-    ctm_alg = ctm_style(; maxiter=150, projector_alg)
-    env, = leading_boundary(env0, Z, ctm_alg)
+    env, = leading_boundary(env0, Z; alg, maxiter=150, projector_alg)
 
     # check observables
-    λ = PEPSKit.value(Z, env)
+    λ = network_value(Z, env)
     m = expectation_value(Z, (1, 1) => M, env)
     e = expectation_value(Z, (1, 1) => E, env)
     f_exact, m_exact, e_exact = classical_ising_exact(; beta)

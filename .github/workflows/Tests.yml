@@ -28,8 +28,10 @@ jobs:
         group:
           - ctmrg
           - boundarymps
+          - gradients
           - examples
           - utility
+          - bondenv
         os:
           - ubuntu-latest
           - macOS-latest
@@ -39,6 +41,7 @@ jobs:
       group: "${{ matrix.group }}"
       julia-version: "${{ matrix.version }}"
       os: "${{ matrix.os }}"
+      timeout-minutes: 75
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 

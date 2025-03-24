@@ -1,28 +1,30 @@
 module PEPSKit
 
 using LinearAlgebra, Statistics, Base.Threads, Base.Iterators, Printf
-using Base: @kwdef
 using Compat
 using Accessors: @set, @reset
 using VectorInterface
 using TensorKit, KrylovKit, MPSKit, OptimKit, TensorOperations
 using ChainRulesCore, Zygote
 using LoggingExtras
-using MPSKit: loginit!, logiter!, logfinish!, logcancel!
+import MPSKit: leading_boundary, loginit!, logiter!, logfinish!, logcancel!
 using MPSKitModels
 using FiniteDifferences
 using OhMyThreads: tmap
+
+include("Defaults.jl")  # Include first to allow for docstring interpolation with Defaults values
 
 include("utility/util.jl")
 include("utility/diffable_threads.jl")
 include("utility/svd.jl")
 include("utility/rotations.jl")
 include("utility/mirror.jl")
-include("utility/diffset.jl")
 include("utility/hook_pullback.jl")
 include("utility/autoopt.jl")
+include("utility/retractions.jl")
 
 include("networks/tensors.jl")
+include("networks/local_sandwich.jl")
 include("networks/infinitesquarenetwork.jl")
 
 include("states/infinitepeps.jl")
@@ -43,6 +45,8 @@ include("algorithms/contractions/ctmrg_contractions.jl")
 include("algorithms/contractions/localoperator.jl")
 include("algorithms/contractions/vumps_contractions.jl")
 include("algorithms/contractions/pulling_through_contractions.jl")
+include("algorithms/contractions/bondenv/benv_tools.jl")
+include("algorithms/contractions/bondenv/als_solve.jl")
 
 include("algorithms/ctmrg/sparse_environments.jl")
 include("algorithms/ctmrg/ctmrg.jl")
@@ -50,6 +54,10 @@ include("algorithms/ctmrg/projectors.jl")
 include("algorithms/ctmrg/simultaneous.jl")
 include("algorithms/ctmrg/sequential.jl")
 include("algorithms/ctmrg/gaugefix.jl")
+
+include("algorithms/truncation/truncationschemes.jl")
+include("algorithms/truncation/fullenv_truncation.jl")
+include("algorithms/truncation/bond_truncation.jl")
 
 include("algorithms/time_evolution/evoltools.jl")
 include("algorithms/time_evolution/simpleupdate.jl")
@@ -64,180 +72,7 @@ include("algorithms/optimization/peps_optimization.jl")
 include("algorithms/pulling_through/pulling_through.jl")
 include("algorithms/pulling_through/pt_peps_opt.jl")
 
-"""
-    module Defaults
-
-Module containing default algorithm parameter values and arguments.
-
-# CTMRG
-- `ctmrg_tol=1e-8`: Tolerance checking singular value and norm convergence
-- `ctmrg_maxiter=100`: Maximal number of CTMRG iterations per run
-- `ctmrg_miniter=4`: Minimal number of CTMRG carried out
-- `trscheme=FixedSpaceTruncation()`: Truncation scheme for SVDs and other decompositions
-- `fwd_alg=TensorKit.SDD()`: SVD algorithm that is used in the forward pass
-- `rrule_alg`: Reverse-rule for differentiating that SVD
-
-    ```
-    rrule_alg = Arnoldi(; tol=ctmrg_tol, krylovdim=48, verbosity=-1)
-    ```
-
-- `svd_alg=SVDAdjoint(; fwd_alg, rrule_alg)`: Combination of `fwd_alg` and `rrule_alg`
-- `projector_alg_type=HalfInfiniteProjector`: Default type of projector algorithm
-- `projector_alg`: Algorithm to compute CTMRG projectors
-
-    ```
-    projector_alg = projector_alg_type(; svd_alg, trscheme, verbosity=0)
-    ```
-
-- `ctmrg_alg`: Algorithm for performing CTMRG runs
-
-    ```
-    ctmrg_alg = SimultaneousCTMRG(
-        ctmrg_tol, ctmrg_maxiter, ctmrg_miniter, 2, projector_alg
-    )
-    ```
-
-# Optimization
-- `fpgrad_maxiter=30`: Maximal number of iterations for computing the CTMRG fixed-point gradient
-- `fpgrad_tol=1e-6`: Convergence tolerance for the fixed-point gradient iteration
-- `iterscheme=:fixed`: Scheme for differentiating one CTMRG iteration
-- `gradient_linsolver`: Default linear solver for the `LinSolver` gradient algorithm
-
-    ```
-    gradient_linsolver=KrylovKit.BiCGStab(; maxiter=fpgrad_maxiter, tol=fpgrad_tol)
-    ```
-
-- `gradient_eigsolve`: Default eigsolver for the `EigSolver` gradient algorithm
-
-    ```
-    gradient_eigsolver = KrylovKit.Arnoldi(; maxiter=fpgrad_maxiter, tol=fpgrad_tol, eager=true)
-    ```
-
-- `gradient_alg`: Algorithm to compute the gradient fixed-point
-
-    ```
-    gradient_alg = LinSolver(; solver=gradient_linsolver, iterscheme)
-    ```
-
-- `reuse_env=true`: If `true`, the current optimization step is initialized on the previous environment
-- `optimizer=LBFGS(32; maxiter=100, gradtol=1e-4, verbosity=3)`: Default `OptimKit.OptimizerAlgorithm` for PEPS optimization
-
-# OhMyThreads scheduler
-- `scheduler=Ref{Scheduler}(...)`: Multi-threading scheduler which can be accessed via `set_scheduler!`
-"""
-module Defaults
-    using TensorKit, KrylovKit, OptimKit, OhMyThreads
-    using MPSKit: DynamicTol
-    using PEPSKit:
-        LinSolver,
-        FixedSpaceTruncation,
-        SVDAdjoint,
-        HalfInfiniteProjector,
-        SimultaneousCTMRG
-
-    # CTMRG
-    const ctmrg_tol = 1e-8
-    const ctmrg_maxiter = 100
-    const ctmrg_miniter = 4
-    const sparse = false
-    const trscheme = FixedSpaceTruncation()
-    const fwd_alg = TensorKit.SDD()
-    const rrule_alg = Arnoldi(; tol=ctmrg_tol, krylovdim=48, verbosity=-1)
-    const svd_alg = SVDAdjoint(; fwd_alg, rrule_alg)
-    const projector_alg_type = HalfInfiniteProjector
-    _finalize(iter, env, state) = env
-    const projector_alg = projector_alg_type(; svd_alg, trscheme, verbosity=0)
-    const ctmrg_alg = SimultaneousCTMRG(
-        ctmrg_tol, ctmrg_maxiter, ctmrg_miniter, 2, projector_alg, finalize
-    )
-
-    # Pulling-through
-    const pt_tol = 1e-8
-    const pt_maxiter = 100
-    const pt_miniter = 4
-    const pt_verbosity = 2
-
-    const dynamic_tols = true
-    const tol_min = 1e-14
-    const tol_max = 1e-4
-
-    const gauge_maxiter = 200
-    const tolgauge = 1e-13
-    const alg_orth = Polar()
-    const gauge_tolfactor = 1e-6
-
-    const eigs_tolfactor = 1e-3
-
-    function pt_alg_gauge(;
-        tol=tolgauge,
-        maxiter=gauge_maxiter,
-        verbosity=1,
-        alg_orth=alg_orth,
-        dynamic_tols=dynamic_tols,
-        tol_min=tol_min,
-        tol_max=tol_max,
-        tol_factor=gauge_tolfactor,
-    )
-        alg = (; tol, maxiter, verbosity, alg_orth)
-        return dynamic_tols ? DynamicTol(alg, tol_min, tol_max, tol_factor) : alg
-    end
-
-    # Optimization
-    const fpgrad_maxiter = 30
-    const fpgrad_tol = 1e-6
-    const gradient_linsolver = KrylovKit.BiCGStab(; maxiter=fpgrad_maxiter, tol=fpgrad_tol)
-    const gradient_eigsolver = KrylovKit.Arnoldi(;
-        maxiter=fpgrad_maxiter, tol=fpgrad_tol, eager=true
-    )
-    const iterscheme = :fixed
-    const gradient_alg = LinSolver(; solver=gradient_linsolver, iterscheme)
-    const reuse_env = true
-    const optimizer = LBFGS(32; maxiter=100, gradtol=1e-4, verbosity=3)
-
-    # OhMyThreads scheduler defaults
-    const scheduler = Ref{Scheduler}()
-    """
-        set_scheduler!([scheduler]; kwargs...)
-
-    Set `OhMyThreads` multi-threading scheduler parameters.
-
-    The function either accepts a `scheduler` as an `OhMyThreads.Scheduler` or
-    as a symbol where the corresponding parameters are specificed as keyword arguments.
-    For instance, a static scheduler that uses four tasks with chunking enabled
-    can be set via
-    ```
-    set_scheduler!(StaticScheduler(; ntasks=4, chunking=true))
-    ```
-    or equivalently with 
-    ```
-    set_scheduler!(:static; ntasks=4, chunking=true)
-    ```
-    For a detailed description of all schedulers and their keyword arguments consult the
-    [`OhMyThreads` documentation](https://juliafolds2.github.io/OhMyThreads.jl/stable/refs/api/#Schedulers).
-
-    If no `scheduler` is passed and only kwargs are provided, the `DynamicScheduler`
-    constructor is used with the provided kwargs.
-
-    To reset the scheduler to its default value, one calls `set_scheduler!` without passing
-    arguments which then uses the default `DynamicScheduler()`. If the number of used threads is
-    just one it falls back to `SerialScheduler()`.
-    """
-    function set_scheduler!(sc=OhMyThreads.Implementation.NotGiven(); kwargs...)
-        if isempty(kwargs) && sc isa OhMyThreads.Implementation.NotGiven
-            scheduler[] = Threads.nthreads() == 1 ? SerialScheduler() : DynamicScheduler()
-        else
-            scheduler[] = OhMyThreads.Implementation._scheduler_from_userinput(
-                sc; kwargs...
-            )
-        end
-        return nothing
-    end
-    export set_scheduler!
-
-    function __init__()
-        return set_scheduler!()
-    end
-end
+include("algorithms/select_algorithm.jl")
 
 using .Defaults: set_scheduler!
 export set_scheduler!
@@ -246,14 +81,16 @@ export CTMRGEnv, SequentialCTMRG, SimultaneousCTMRG
 export PullingThrough, PullingThroughEnv
 export FixedSpaceTruncation, HalfInfiniteProjector, FullInfiniteProjector
 export LocalOperator
-export expectation_value, cost_function, product_peps, correlation_length
+export expectation_value, cost_function, product_peps, correlation_length, network_value
 export leading_boundary
 export PEPSOptimize, GeomSum, ManualIter, LinSolver, EigSolver, LSSolver
 export fixedpoint
 
 export absorb_weight
+export ALSTruncation, FullEnvTruncation
 export su_iter, simpleupdate, SimpleUpdate
 
+export InfiniteSquareNetwork
 export InfinitePartitionFunction
 export InfinitePEPS, InfiniteTransferPEPS
 export SUWeight, InfiniteWeightPEPS
@@ -263,7 +100,7 @@ export ReflectDepth, ReflectWidth, Rotate, RotateReflect
 export symmetrize!, symmetrize_retract_and_finalize!
 export showtypeofgrad
 export InfiniteSquare, vertices, nearest_neighbours, next_nearest_neighbours
-export transverse_field_ising, heisenberg_XYZ, j1_j2
+export transverse_field_ising, heisenberg_XYZ, heisenberg_XXZ, j1_j2, bose_hubbard_model
 export pwave_superconductor, hubbard_model, tj_model
 
 end # module
