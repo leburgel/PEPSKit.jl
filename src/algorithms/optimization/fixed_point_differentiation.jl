@@ -177,13 +177,13 @@ Use for computing the pulling-through fixed-point gradient, where the `iterschem
 the formulation of the fixed-point equations that is used (:rectangular or :square).
 """
 struct LSSolver{F} <: GradMode{F}
-    solver::KrylovKit.LeastSquaresSolver
+    solver_alg::KrylovKit.LeastSquaresSolver
 end
 function LSSolver(;
-    solver=KrylovKit.LSMR(; maxiter=Defaults.fpgrad_maxiter, tol=Defaults.fpgrad_tol),
+    solver_alg=KrylovKit.LSMR(; maxiter=Defaults.fpgrad_maxiter, tol=Defaults.fpgrad_tol),
     iterscheme=:rectangular,
 )
-    return LSSolver{iterscheme}(solver)
+    return LSSolver{iterscheme}(solver_alg)
 end
 
 #=

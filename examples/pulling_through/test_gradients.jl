@@ -36,28 +36,22 @@ pt_algs = [
 ]
 gradmodes = [
     [
-        # LinSolver(;
-        #     solver=KrylovKit.GMRES(; tol=gradtol, maxiter=200, krylovdim=100),
-        #     iterscheme=:square,
-        # ),
-        # LinSolver(;
-        #     solver=KrylovKit.BiCGStab(; tol=gradtol, maxiter=200), iterscheme=:square
-        # ),
+        LinSolver(;
+            solver_alg=KrylovKit.GMRES(; tol=gradtol, maxiter=200, krylovdim=100),
+            iterscheme=:square,
+        ),
         LSSolver(;
-            solver=KrylovKit.LSMR(; tol=gradtol, maxiter=200, krylovdim=100),
+            solver_alg=KrylovKit.LSMR(; tol=gradtol, maxiter=200, krylovdim=100),
             iterscheme=:rectangular,
         ),
     ],
     [
-        # LinSolver(;
-        #     solver=KrylovKit.GMRES(; tol=gradtol, maxiter=200, krylovdim=100),
-        #     iterscheme=:square,
-        # ),
-        # LinSolver(;
-        #     solver=KrylovKit.BiCGStab(; tol=gradtol, maxiter=200), iterscheme=:square
-        # ),
+        LinSolver(;
+            solver_alg=KrylovKit.GMRES(; tol=gradtol, maxiter=200, krylovdim=100),
+            iterscheme=:square,
+        ),
         LSSolver(;
-            solver=KrylovKit.LSMR(; tol=gradtol, maxiter=200, krylovdim=100),
+            solver_alg=KrylovKit.LSMR(; tol=gradtol, maxiter=200, krylovdim=100),
             iterscheme=:rectangular,
         ),
     ],

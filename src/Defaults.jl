@@ -82,6 +82,9 @@ export set_scheduler!
 
 using OhMyThreads
 
+using TensorKit: Polar
+using MPSKit: DynamicTol
+
 # CTMRG
 const ctmrg_tol = 1e-8
 const ctmrg_maxiter = 100
@@ -138,7 +141,7 @@ const tol_min = 1e-14
 const tol_max = 1e-4
 
 const gauge_maxiter = 200
-const tolgauge = 1e-13
+const tolgauge = 1e-14
 const alg_orth = Polar()
 const gauge_tolfactor = 1e-6
 

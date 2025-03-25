@@ -16,7 +16,7 @@ struct Rotation <: SymmetrizationStyle end # C4
 struct Reflection <: SymmetrizationStyle end # D2
 struct ReflectionRotation <: SymmetrizationStyle end # C4v
 struct HReflection <: SymmetrizationStyle end # D2
-struct HReflectionRotation <: SymmetrizationStyle end # C4v 
+struct HReflectionRotation <: SymmetrizationStyle end # C4v
 
 # unit cell styles
 abstract type UnitCellStyle end
@@ -29,6 +29,9 @@ flipper(A::PEPSTensor, i::Int) = flipper(space(A, i))
 flipper(S::ElementarySpace) = isomorphism(flip(S), S)
 
 # fill up InfinitePEPS unit cell from a single PEPSTensor
+
+# Symmetric: use a 2x2 unit cell giving a bipartite PEPS where the B tensors are obtained by
+# flipping all virtual spaces of the A tensors
 function fill_peps(A::PEPSTensor, ::Symmetric)::InfinitePEPS
     @tensor B[-1; -2 -3 -4 -5] :=
         A[-1; 1 2 3 4] *
@@ -38,6 +41,9 @@ function fill_peps(A::PEPSTensor, ::Symmetric)::InfinitePEPS
         flipper(A, 5)[-5; 4]
     return InfinitePEPS([A B; B A])
 end
+
+# Asymmetric: use a 1x1 unit cell by flipping the south and west virtual spaces of a given
+# spatially symmetric tensor
 function fill_peps(A::PEPSTensor, ::Asymmetric)::InfinitePEPS
     @tensor A´[-1; -2 -3 -4 -5] :=
         A[-1; -2 -3 1 2] * flipper(A, 4)[-4; 1] * flipper(A, 5)[-5; 2]
@@ -138,7 +144,7 @@ function peps_opt_costfunction(
     symm_style=HReflectionRotation(),
 )
     function peps_cfun(x)
-        (A::PEPSTensor, env::CTMRGEnv) = x
+        (A::PEPSTensor, env::Union{CTMRGEnv,PEPSKit.SymmetricEnv}) = x
         E, g = withgradient(A) do x
             ψ = fill_peps(x, unitcell_style) # the first bamboozle
             env´, _ = PEPSKit.hook_pullback(
@@ -174,7 +180,7 @@ function vector_opt_costfunction(
     A_basis = find_symmetric_basis(P, V, symm_style)
 
     function vector_cfun(x)
-        (a::Vector{<:Real}, env::CTMRGEnv) = x
+        (a::Vector{<:Real}, env::Union{CTMRGEnv,PEPSKit.SymmetricEnv}) = x
         E, g = withgradient(a) do v
             ψ = fill_peps(vec2peps(v, A_basis), unitcell_style) # the bamboozle
             env´, _ = PEPSKit.hook_pullback(

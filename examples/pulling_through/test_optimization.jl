@@ -10,7 +10,6 @@ using Revise
 using LinearAlgebra
 using TensorKit
 using MPSKit
-using MPSKitModels
 using PEPSKit
 using KrylovKit
 using OptimKit
@@ -30,14 +29,19 @@ symm = MyRotateReflect()
 pt_alg = PullingThrough(; tol=1e-10, verbosity=2, maxiter=500)
 opt_alg = PEPSOptimize(;
     boundary_alg=pt_alg,
-    optimizer=LBFGS(4; maxiter=100, gradtol=1e-4, verbosity=5, ls_maxiter=3, ls_maxfg=6),
+    optimizer_alg=LBFGS(
+        4; maxiter=100, gradtol=1e-4, verbosity=5, ls_maxiter=3, ls_maxfg=6
+    ),
     # gradient_alg=LinSolver(;
     #     solver=KrylovKit.GMRES(; maxiter=30, tol=PEPSKit.Defaults.fpgrad_tol, verbosity=2),
     #     iterscheme=:square, # broken
     # ),
     gradient_alg=LSSolver(;
-        solver=KrylovKit.LSMR(;
-            maxiter=500, tol=PEPSKit.Defaults.fpgrad_tol, verbosity=1, krylovdim=500 # TODO: figure out why I need to blow up the Krylovdim so much...
+        solver_alg=KrylovKit.LSMR(;
+            maxiter=500,
+            tol=PEPSKit.Defaults.gradient_tol,
+            verbosity=2,
+            krylovdim=500, # TODO: figure out why I need to blow up the Krylovdim so much...
         ),
         iterscheme=:rectangular, # might just be working now...
     ),

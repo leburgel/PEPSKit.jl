@@ -28,8 +28,10 @@ pt_state = InfinitePartitionFunction(P)
 pt_envinit = PullingThroughEnv(pt_state, ℂ^χ)
 pt_alg = PullingThrough(; tol=1e-10, maxiter=200, verbosity=3)
 
-# run pure contraction, not 
-pt_env, pt_λ, = PEPSKit.pulling_through_iterate(pt_envinit, pt_state, pt_alg)
+# run pure contraction, without the symmetrization step
+pt_env, pt_λ, = PEPSKit.pulling_through_iterate(
+    pt_envinit, InfiniteSquareNetwork(pt_state), pt_alg
+)
 pt_λ = abs(pt_λ)
 
 #

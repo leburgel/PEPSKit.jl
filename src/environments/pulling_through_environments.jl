@@ -85,36 +85,31 @@ end
 
 ## Constructors
 
-# symmetric pulling through, only use a single virtual space
+# symmetric pulling through, so we only use a single virtual space
 
-function PullingThroughEnv(st::InfiniteSquareNetwork, chi::ElementarySpaceLike)
-    return PullingThroughEnv(randn, ComplexF64, st, chi)
+# allow constructing environments for implicitly defined contractible networks
+function PullingThroughEnv(state::Union{InfinitePartitionFunction,InfinitePEPS}, args...)
+    return PullingThroughEnv(InfiniteSquareNetwork(state), args...)
 end
 function PullingThroughEnv(
-    f, ::Type{T}, peps::InfinitePEPS, chi::ElementarySpaceLike
-) where {T}
-    chi = _to_space(chi)
-    P = only(peps.A)
-    D_N_above = adjoint(space(P, 2))
-    D_N_below = adjoint(D_N_above)
-    D_W_above = adjoint(space(P, 5))
-    D_W_below = adjoint(D_W_above)
-
-    N = TensorMap(f, T, chi ⊗ D_N_above ⊗ D_N_below ← chi)
-    W = TensorMap(f, T, chi ⊗ D_W_above ⊗ D_W_below ← chi)
-
-    return PullingThroughEnv(N, W)
+    f, T, state::Union{InfinitePartitionFunction,InfinitePEPS}, args...
+)
+    return PullingThroughEnv(f, T, InfiniteSquareNetwork(state), args...)
 end
+
+# fill in default eltype and data initializer
+function PullingThroughEnv(network::InfiniteSquareNetwork, chi::ElementarySpaceLike)
+    return PullingThroughEnv(randn, ComplexF64, network, chi)
+end
+
+# actual constructor
 function PullingThroughEnv(
-    f, ::Type{T}, partfunc::InfinitePartitionFunction, chi::ElementarySpaceLike
+    f, ::Type{T}, network::InfiniteSquareNetwork, chi::ElementarySpaceLike
 ) where {T}
     chi = _to_space(chi)
-    Z = only(partfunc.A)
-    D_N = adjoint(space(Z, 3))
-    D_W = adjoint(space(Z, 1))
-
-    N = TensorMap(f, T, chi ⊗ D_N ← chi)
-    W = TensorMap(f, T, chi ⊗ D_W ← chi)
+    P = network[1, 1] # hardcoded to single-site unit cell for now
+    N = TensorMap(f, T, chi ⊗ _elementwise_dual(north_virtualspace(P)) ← chi)
+    W = TensorMap(f, T, chi ⊗ _elementwise_dual(west_virtualspace(P)) ← chi)
 
     return PullingThroughEnv(N, W)
 end
@@ -145,6 +140,9 @@ function gauge_north(env::PullingThroughEnv, alg_gauge)
     return env
 end
 
+_right_canonical_orth_alg(alg_orth) = alg_orth
+_right_canonical_orth_alg(::QRpos) = LQpos() # this is very annoying...
+
 function gauge_west(env::PullingThroughEnv, alg_gauge)
     W = env.W
     RW0 = if isnothing(env.RW)
@@ -157,7 +155,7 @@ function gauge_west(env::PullingThroughEnv, alg_gauge)
         tol=alg_gauge.tol,
         maxiter=alg_gauge.maxiter,
         verbosity=alg_gauge.verbosity,
-        alg_orth=alg_gauge.alg_orth,
+        alg_orth=_right_canonical_orth_alg(alg_gauge.alg_orth),
     )
     AR = MPSKit.PeriodicArray([copy(W)])
     C = MPSKit.PeriodicArray([copy(RW0)])
@@ -345,26 +343,6 @@ function ChainRulesCore.rrule(::typeof(physical_flip), A::MPSKit.GenericMPSTenso
     return Ap, physical_flip_pullback
 end
 
-function ChainRulesCore.rrule(
-    ::typeof(physical_flipper), N::MPSKit.GenericMPSTensor{S,N₁}
-) where {S,N₁}
-    return N, ΔN -> (ΔN,)
-end
-
-# trying to optimize the unitary flipper, and failing
-function get_unitary_costfun(Q, N, W)
-    function f(U)
-        E, gs = withgradient(U) do Up
-            LHS = transfer_left(Q, N, W, Up)
-            λ = tr(LHS * Q')
-            return -log(abs(λ))
-        end
-        Δ = TKM.Unitary.project!(only(gs), U)
-        return E, Δ
-    end
-    return f
-end
-
 function LinearAlgebra.schur(t::TensorMap; kwargs...)
     return LinearAlgebra.schur!(copy(t); kwargs...)
 end
@@ -393,6 +371,65 @@ function _conj(A::MPSKit.GenericMPSTensor{S,N₁}) where {S,N₁}
     return permute(A', ((1, (3:(N₁ + 1))...), (2,)))
 end
 
+# trying to optimize the unitary flipper
+
+# skipping this altogether for now, but keeping it around for later
+
+function get_unitary_costfun(Q, N, W)
+    function f(U)
+        E, gs = withgradient(U) do Up
+            LHS = transfer_left(Q, N, W, Up)
+            λ = tr(LHS * Q')
+            return -log(abs(λ))
+        end
+        Δ = TKM.Unitary.project!(only(gs), U)
+        return E, Δ
+    end
+    return f
+end
+
+function optimize_physical_unitary(
+    N,
+    W;
+    Q0=MPSKit.randomize!(similar(N, space(W, 1) ← space(N, 1))),
+    Up0::SquareTensorMap=physical_isometry(env.N, env.W),
+    tol_conv=Defaults.ctmrg_tol,
+    tol_eigs=MPSKit.Defaults.tol,
+    maxiter=1000,
+    verbosity=1,
+)
+    λ, Q = MPSKit.fixedpoint(gen_transfer_left(N, W, Up0), Q0, :LM; tol=tol_eigs)
+    u, _, v = tsvd(Q)
+    Q = u * v
+
+    # if the leading eigenvalue is not a phase, iteratively update the physical map until it is
+    iter = 0
+    Up = Up0
+
+    while !isapprox(abs(λ), 1.0; atol=tol_conv) && iter < maxiter
+        iter += 1
+        verbosity > 1 && @info "Symmetrization at iter=$iter: abs(λ)=$(abs(λ))"
+
+        # proper optimization update, 'works' but don't know if the result is any good...
+        Up, = optimize(
+            get_unitary_costfun(Q, N, W),
+            Up,
+            LBFGS(; maxiter=5, gradtol=tol_eigs, verbosity=verbosity - 1);
+            inner=TKM.Unitary.inner,
+            retract=TKM.Unitary.retract,
+            (transport!)=(TKM.Unitary.transport!),
+        )
+
+        λ, Q = MPSKit.fixedpoint(gen_transfer_left(N, W, Up), Q, :LM; tol=tol_eigs)
+    end
+    verbosity > 0 && @info "Symmetrization terminated at iter=$iter with abs(λ)=$(abs(λ))"
+
+    u, _, v = tsvd(Q)
+    Q = u * v
+
+    return Up, Q
+end
+
 #
 # Symmetric contraction environment
 #
@@ -408,7 +445,7 @@ end
 # all the tricks to symmetrize the environment
 function symmetric_environment(
     env::PullingThroughEnv,
-    Up0::SquareTensorMap=physical_isometry(env.N, env.W);
+    Up0::SquareTensorMap=physical_isometry(env.N, env.W); # TODO: update to use externally supplied physical unitary
     tol_conv=Defaults.ctmrg_tol,
     tol_eigs=MPSKit.Defaults.tol,
     maxiter=1000,
@@ -433,34 +470,11 @@ function symmetric_environment(
     u, _, v = tsvd(Q)
     Q = u * v
 
-    # if the leading eigenvalue is not a phase, iteratively update the physical map until it is
-    iter = 0
-    Up = Up0
-
     isapprox(abs(λ), 1.0; atol=tol_conv) ||
         @warn "Requiring physical unitary other than the spaceflip, probably something went wrong"
 
-    # TODO: get rid of this whole thing, and just add virtual flippers everywhere...
-    while !isapprox(abs(λ), 1.0; atol=tol_conv) && iter < maxiter
-        iter += 1
-        verbosity > 1 && @info "Symmetrization at iter=$iter: abs(λ)=$(abs(λ))"
-
-        # proper optimization update, 'works' but don't know if the result is any good...
-        Up, = optimize(
-            get_unitary_costfun(Q, N, W),
-            Up,
-            LBFGS(; maxiter=5, gradtol=tol_eigs, verbosity=verbosity - 1);
-            inner=TKM.Unitary.inner,
-            retract=TKM.Unitary.retract,
-            (transport!)=(TKM.Unitary.transport!),
-        )
-
-        λ, Q = MPSKit.fixedpoint(gen_transfer_left(N, W, Up), Q, :LM; tol=tol_eigs)
-    end
-    verbosity > 0 && @info "Symmetrization terminated at iter=$iter with abs(λ)=$(abs(λ))"
-
-    u, _, v = tsvd(Q)
-    Q = u * v
+    # Up, Q = optimize_physical_unitary(N, W; Q0, Up0, tol_conv, tol_eigs, maxiter, verbosity)
+    Up = Up0 # skip physical unitary optimization for now
 
     # absorb the unitary into the corner tensor and update the north and west edges
     Xm, V, = schur(Q' * X) # TODO: figure out purely imaginary Xm?
@@ -475,7 +489,7 @@ function symmetric_environment(
 
     # impose hermiticity on Nm
     Nm_dag = _conj(Nm)
-    N̄m = physical_flip(Nm_dag) # TODO: we probably want to apply the actual physical unitary if there is one...
+    N̄m = physical_flip(Nm_dag) # TODO: update to use externally supplied physical unitary
     Nm = (Nm + N̄m) / 2
     Nm = normalize_mps(Nm)
 

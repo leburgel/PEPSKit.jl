@@ -11,8 +11,7 @@ Pulling-through contraction algorithm.
     finalize::F = Defaults._finalize
 
     dynamic_tols::Bool = Defaults.dynamic_tols
-    alg_gauge = Defaults.pt_alg_gauge()
-    pr_alg_eigsolve = Defaults.pt_alg_gauge(; dynamic_tols)
+    alg_gauge = Defaults.pt_alg_gauge(; dynamic_tols)
     alg_eigsolve = MPSKit.Defaults.alg_eigsolve(;
         ishermitian=false, tol=1e-14, tol_factor=Defaults.eigs_tolfactor, dynamic_tols
     )
@@ -22,22 +21,18 @@ end
 # Iterative contraction routine
 #
 
-# TODO: generalize this to a `getindex` on a 'contractible' network and adopt it everywhere...
-_local_sandwich(state::InfinitePEPS) = (only(state.A), only(state.A))
-_local_sandwich(state::InfinitePartitionFunction) = only(state.A)
-
 """
     pulling_through_update(state, env, alg::PullingThrough) -> env′, info
 
 Perform a single pulling through iteration.
 """
 function pulling_through_update(
-    state::InfiniteSquareNetwork, env::PullingThroughEnv, alg_eigsolve, alg_gauge
+    network::InfiniteSquareNetwork, env::PullingThroughEnv, alg_eigsolve, alg_gauge
 )
     # update west
     env = gauge_north(env, alg_gauge)
     _, W_next = MPSKit.fixedpoint(env.W, :LM, alg_eigsolve) do x
-        return transfer_west(x, env.NL, _local_sandwich(state))
+        return transfer_west(x, env.NL, network[1, 1])
     end
     @reset env.W = W_next
     # @reset env.W = normalize_mps(W_next)
@@ -45,7 +40,7 @@ function pulling_through_update(
     # update north
     env = gauge_west(env, alg_gauge)
     λ, N_next = MPSKit.fixedpoint(env.N, :LM, alg_eigsolve) do x
-        return transfer_north(x, env.WR, _local_sandwich(state))
+        return transfer_north(x, env.WR, network[1, 1])
     end
     @reset env.N = N_next
     # @reset env.N = normalize_mps(N_next)
@@ -58,7 +53,9 @@ end
 
 Converge a northwest pulling through corner for a given state.
 """
-function pulling_through_iterate(envinit, state, alg::PullingThrough)
+function pulling_through_iterate(
+    envinit::PullingThroughEnv, network::InfiniteSquareNetwork, alg::PullingThrough
+)
     ϵ::Float64 = calc_convergence(envinit)
     N = 0.0
     env = deepcopy(envinit)
@@ -70,11 +67,11 @@ function pulling_through_iterate(envinit, state, alg::PullingThrough)
             alg_eigsolve = MPSKit.updatetol(alg.alg_eigsolve, iter, ϵ)
             alg_gauge = MPSKit.updatetol(alg.alg_gauge, iter, ϵ)
 
-            env, N = pulling_through_update(state, env, alg_eigsolve, alg_gauge)
+            env, N = pulling_through_update(network, env, alg_eigsolve, alg_gauge)
 
             ϵ = calc_convergence(env)
 
-            env = alg.finalize(iter, env, state)
+            env = alg.finalize(iter, env, network)
 
             if ϵ <= alg.tol
                 pt_logfinish!(log, iter, ϵ, N)
@@ -130,21 +127,23 @@ end
 Contract `state` using pulling through and return the environment. Per default, a random
 initial environment is used.
 """
-function MPSKit.leading_boundary(state, alg::PullingThrough)
-    return MPSKit.leading_boundary(
-        PullingThroughEnv(state, oneunit(spacetype(state))), state, alg
-    )
-end
-function MPSKit.leading_boundary(envinit::SymmetricEnv, state, alg::PullingThrough)
-    return MPSKit.leading_boundary(PullingThroughEnv(envinit), state, alg)
-end
-function MPSKit.leading_boundary(envinit::PullingThroughEnv, state, alg::PullingThrough)
+function MPSKit.leading_boundary(
+    envinit::PullingThroughEnv, network::InfiniteSquareNetwork, alg::PullingThrough
+)
     # run the iterative algorithm
-    env, N, ϵ = pulling_through_iterate(envinit, state, alg)
+    env, N, ϵ = pulling_through_iterate(envinit, network, alg)
 
     # gauge-fix and symmetrize
     env, = symmetric_environment(env)
 
     # TODO: temporarily unpack SymmetricEnv to avoid issues?
     return env, N, ϵ
+end
+function leading_boundary(env₀, state, alg::PullingThrough)
+    return leading_boundary(env₀, InfiniteSquareNetwork(state), alg)
+end
+function MPSKit.leading_boundary(
+    env₀::SymmetricEnv, state::InfiniteSquareNetwork, alg::PullingThrough
+)
+    return MPSKit.leading_boundary(PullingThroughEnv(env₀), state, alg)
 end

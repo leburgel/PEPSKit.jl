@@ -1,4 +1,11 @@
 #
+# Random thingies
+#
+
+# TODO: get rid of this hack
+_alg_or_nt(::Type{CTMRGAlgorithm}, alg::A) where {A<:PullingThrough} = alg
+
+#
 # Expectation values
 #
 
@@ -84,8 +91,8 @@ function fp_transfer_west(
 end
 
 # 'rectangular' version of fixed-point equations
-function pt_fixedpoint(::Val{:rectangular}, state, A, X, N)
-    O = _local_sandwich(state)
+function pt_fixedpoint(::Val{:rectangular}, network, A, X, N)
+    O = network[1, 1]
     X2 = X * X
     X4 = X2 * X2
 
@@ -105,8 +112,8 @@ function pt_fixedpoint(::Val{:rectangular}, state, A, X, N)
 end
 
 # 'square' version of fixed-point equations
-function pt_fixedpoint(::Val{:square}, state, A, X, N)
-    O = _local_sandwich(state)
+function pt_fixedpoint(::Val{:square}, network, A, X, N)
+    O = network[1, 1]
     X2 = X * X
     X4 = X2 * X2
 
@@ -126,7 +133,7 @@ end
 _randomize!(A::AbstractTensorMap) = MPSKit.randomize!(A)
 _randomize!(::T) where {T<:Number} = randn(T)
 function initialize_rhs(F, state, A, X, N)
-    return _randomize!.(pt_fixedpoint(F, state, A, X, N))
+    return _randomize!.(pt_fixedpoint(F, InfiniteSquareNetwork(state), A, X, N))
 end
 
 # TODO: figure out al the appropriate conditions and corresponding projections...
@@ -141,8 +148,8 @@ end
 #
 
 # partial pushforward implementing environment JVP
-function generate_partial_pushforward(::Val{:rectangular}, state, A, X, N)
-    O = _local_sandwich(state)
+function generate_partial_pushforward(::Val{:rectangular}, network, A, X, N)
+    O = network[1, 1]
     X2 = X * X
 
     function partial_pushforward((∂A, ∂X, ∂N))
@@ -176,8 +183,8 @@ function generate_partial_pushforward(::Val{:rectangular}, state, A, X, N)
 end
 
 # # partial pullback implementing environment VJP; TODO
-# function generate_partial_pullback(::Val{:rectangular}, state, A, X, N)
-#     O = _local_sandwich(state)
+# function generate_partial_pullback(::Val{:rectangular}, network, A, X, N)
+#     O = network[1, 1]
 #     X2 = X * X
 
 #     function partial_pullback((ΔFP1, ΔFP2, ΔFP3, ΔFP4))
@@ -193,12 +200,13 @@ end
 #     return partial_pullback
 # end
 
+# TODO: totally broken, need to figure out how to do this properly...
 function _rrule(
     gradmode::LinSolver{:square},
     config::RuleConfig,
     ::typeof(MPSKit.leading_boundary),
     envinit,
-    state,
+    state::InfinitePEPS,
     alg::PullingThrough,
 )
     env, N, ϵ = leading_boundary(envinit, state, alg)
@@ -217,13 +225,15 @@ function _rrule(
         ΔX = Δenv.X
 
         # DEBUGGING
-        fps = pt_fixedpoint(Val(:square), state, env.A, env.X, N)
+        fps = pt_fixedpoint(Val(:square), InfiniteSquareNetwork(state), env.A, env.X, N)
         nrm = sum(norm.(fps))
         nrm < alg.tol ||
             @warn "Fixed-point equations not satisfied, still using the gradient: $nrm"
 
         # find partial gradients of pulling through fixed-point equation
-        f(state, A, X, N) = pt_fixedpoint(Val(:square), state, A, X, N)
+        function f(state, A, X, N)
+            return pt_fixedpoint(Val(:square), InfiniteSquareNetwork(state), A, X, N)
+        end
         _, pt_vjp = pullback(f, state, env.A, env.X, N)
 
         function vjp_env(x)
@@ -249,8 +259,8 @@ function _rrule(
         # solve linear problem to invert environment pullback
         Δx = (ΔA, ΔX, N)
         x₀ = initialize_rhs(Val(:square), state, env.A, env.X, N)
-        x, info = reallinsolve(vjp_env, Δx, x₀, gradmode.solver)
-        if gradmode.solver.verbosity > 0 && info.converged != 1
+        x, info = reallinsolve(vjp_env, Δx, x₀, gradmode.solver_alg)
+        if gradmode.solver_alg.verbosity > 0 && info.converged != 1
             @warn(
                 "gradient fixed-point iteration reached maximal number of iterations:", info
             )
@@ -270,7 +280,7 @@ function _rrule(
     config::RuleConfig,
     ::typeof(MPSKit.leading_boundary),
     envinit,
-    state,
+    state::InfinitePEPS, # TODO: generalize this
     alg::PullingThrough,
 )
     env, N, ϵ = leading_boundary(envinit, state, alg)
@@ -289,7 +299,9 @@ function _rrule(
         ΔX = Δenv.X
 
         # initialize proper form of the fixed-point equations
-        f(state, A, X, N) = pt_fixedpoint(Val(:rectangular), state, A, X, N)
+        function f(state, A, X, N)
+            return pt_fixedpoint(Val(:rectangular), InfiniteSquareNetwork(state), A, X, N)
+        end
         # and evaluate everything in the primal fixed-point solution
         X0 = (state, env.A, env.X, N)
 
@@ -321,14 +333,16 @@ function _rrule(
             return (ΔA, ΔX, ΔN)
         end
         # hack to get the adjoint action of the environment pullback
-        jvp_env = generate_partial_pushforward(Val(:rectangular), state, env.A, env.X, N)
+        jvp_env = generate_partial_pushforward(
+            Val(:rectangular), InfiniteSquareNetwork(state), env.A, env.X, N
+        )
         # restrict to state pullback
         vjp_state(x) = pt_vjp(x)[1]
 
         # solve linear problem to invert environment pullback
         Δx = (ΔA, ΔX, N)
-        y, info = reallssolve((vjp_env, jvp_env), Δx, gradmode.solver)
-        if gradmode.solver.verbosity > 0 && info.converged != 1
+        y, info = reallssolve((vjp_env, jvp_env), Δx, gradmode.solver_alg)
+        if gradmode.solver_alg.verbosity > 0 && info.converged != 1
             @warn(
                 "gradient fixed-point iteration reached maximal number of iterations:", info
             )
