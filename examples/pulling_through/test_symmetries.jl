@@ -15,13 +15,14 @@ using PEPSKit
 using KrylovKit
 
 #
-# Contract
+# Partition function
 #
 
-T = 2 / log(1 + sqrt(2))
+@info "Testing pulling through fixed-point equations for partition function contraction"
+
 χ = 12
 
-O = classical_ising(; beta=1 / T)
+O = classical_ising(; beta=log(1 + sqrt(2)) / 2)
 P = O[1]
 
 pt_state = InfinitePartitionFunction(P)
@@ -34,15 +35,12 @@ pt_env, pt_λ, = PEPSKit.pulling_through_iterate(
 )
 pt_λ = abs(pt_λ)
 
-#
-# Symmetrize
-#
+## Symmetrize in center gauge
 
-symm_env, Up, W, λ_transfer = PEPSKit.symmetric_environment(pt_env)
+gauge = :center
+symm_env, Up, W, λ_transfer = PEPSKit.center_gauge_environment(pt_env)
 
-#
-# Test the symmetries
-#
+## Test the fixed-point equations
 
 X = symm_env.X
 A = symm_env.A
@@ -53,27 +51,23 @@ ovlp = tr(A' * PEPSKit.apply_physical_unitary(W, Up')) / (norm(A) * norm(W))
 
 ## Check the fixed point equations
 
-# check if X is normalized
-@show tr(X^4)
+for style in [:naive, :regularized]
+    @info "Style: $style"
 
-# check if A is hermitian
-Ā = PEPSKit.apply_physical_unitary(PEPSKit._conj(A), Up')
-@show norm(A - Ā)
+    # FP1
+    @show norm(PEPSKit.fixed_point_1(Val(gauge), Val(style), A, X))
 
-# check the left fixed point of the transfer matrix
-X2´ = MPSKit.transfer_left(X^2, A, A)
-@show abs(tr(X2´' * X^2))
+    # FP2
+    @show norm(PEPSKit.fixed_point_2(Val(gauge), Val(style), A, X, pt_λ, P))
 
-# check the eigenvalue equation
-@tensor LHS[-1 -2; -3] :=
-    A[1 3; -3] *
-    PEPSKit.physical_flip(A)[5 4; 2] *
-    PEPSKit.physical_flip(A)[-1 7; 6] *
-    X[2; 1] *
-    X[6; 5] *
-    P[4 7; 3 -2]
+    # FP3
+    @show norm(PEPSKit.fixed_point_3(Val(gauge), Val(style), A, X))
 
-@tensor RHS[-1 -2; -3] := PEPSKit.physical_flip(A)[1 -2; 2] * X[-1; 1] * X[2; -3]
+    # FP4
+    @show norm(PEPSKit.fixed_point_4(Val(gauge), Val(style), X))
+end
+
+@info "Checking local contraction"
 
 λ_out = @tensor A[1 3; 8] *
     PEPSKit.physical_flip(A)[5 4; 2] *
@@ -86,22 +80,53 @@ X2´ = MPSKit.transfer_left(X^2, A, A)
     P[4 7; 3 10]
 
 @show abs(λ_out - pt_λ) # can get eigenvalue from local contraction
-@show norm(LHS - λ_out * RHS) # and the eigenvalue equation is satisfied
 
-# check Bram's alternative with the adjoint to make it square
-@tensor LHS2[-1 -2; -3] :=
-    A[1 3; -3] *
+## Symmetrize in left gauge
+
+gauge = :left
+symm_env, Up, W, λ_transfer = PEPSKit.left_gauge_environment(pt_env)
+
+## Check the fixed point equations
+
+X = symm_env.X
+A = symm_env.A
+
+# check if we actually made N equal to W
+ovlp = tr(A' * PEPSKit.apply_physical_unitary(W, Up')) / (norm(A) * norm(W))
+@show abs(ovlp)
+
+## Check the fixed point equations
+
+for style in [:naive, :regularized]
+    @info "Style: $style"
+
+    # FP1
+    @show norm(PEPSKit.fixed_point_1(Val(gauge), Val(style), A, X))
+
+    # FP2
+    @show norm(PEPSKit.fixed_point_2(Val(gauge), Val(style), A, X, pt_λ, P))
+
+    # FP3
+    @show norm(PEPSKit.fixed_point_3(Val(gauge), Val(style), A, X))
+
+    # FP4
+    @show norm(PEPSKit.fixed_point_4(Val(gauge), Val(style), X))
+end
+
+@info "Checking local contraction"
+
+λ_out = @tensor A[1 3; 8] *
     PEPSKit.physical_flip(A)[5 4; 2] *
-    conj(A[6 7; -1]) *
+    PEPSKit.physical_flip(A)[12 7; 6] *
+    A[9 10; 11] *
     X[2; 1] *
     X[6; 5] *
-    P[4 7; 3 -2]
+    X[11; 12] *
+    X[8; 9] *
+    P[4 7; 3 10]
 
-@show norm(LHS2 - λ_out * RHS)
-# works, so we should just pretend this is enough?
-# don't need to include hermiticity in fixed-point equations?
+@show abs(λ_out - pt_λ) # can get eigenvalue from local contraction
 
-# TODO: should we actually think of X as real for the fixed point equations, or not?
-# TODO: add a PEPS test
+# TODO: look into making fixed-point equation system square
 
 nothing

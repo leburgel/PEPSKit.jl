@@ -7,7 +7,7 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 
 using Revise
 
-using LinearAlgebra
+# using LinearAlgebra
 using TensorKit
 using MPSKit
 using PEPSKit
@@ -26,7 +26,7 @@ H = heisenberg_XYZ(InfiniteSquare(); Jx=-1, Jy=1, Jz=-1)
 χbond = 2 # TODO: play around with this...
 χenv = 20 # TODO: can't use too large environment bond dimensions for small PEPS bond dimensions/very gapped states?
 symm = MyRotateReflect()
-pt_alg = PullingThrough(; tol=1e-10, verbosity=2, maxiter=500)
+pt_alg = PullingThrough(; tol=1e-10, verbosity=2, maxiter=500, gauge=:center)
 opt_alg = PEPSOptimize(;
     boundary_alg=pt_alg,
     optimizer_alg=LBFGS(
@@ -36,14 +36,12 @@ opt_alg = PEPSOptimize(;
     #     solver=KrylovKit.GMRES(; maxiter=30, tol=PEPSKit.Defaults.fpgrad_tol, verbosity=2),
     #     iterscheme=:square, # broken
     # ),
-    gradient_alg=LSSolver(;
+    gradient_alg=PTLSSolver(;
         solver_alg=KrylovKit.LSMR(;
-            maxiter=500,
-            tol=PEPSKit.Defaults.gradient_tol,
-            verbosity=2,
-            krylovdim=500, # TODO: figure out why I need to blow up the Krylovdim so much...
+            maxiter=500, tol=PEPSKit.Defaults.gradient_tol, verbosity=2, krylovdim=500
         ),
-        iterscheme=:rectangular, # might just be working now...
+        gauge=:center,
+        style=:naive,
     ),
     reuse_env=true,
     symmetrization=symm,
@@ -69,22 +67,6 @@ end
 # ψ₀ = product_peps(ℂ^2, ℂ^χbond; unitcell=(1, 1), noise_amp=1e-2)
 ψ₀ = symmetrize!(ψ₀, symm)
 ψ₀[1, 1] /= norm(ψ₀[1, 1], Inf)
-
-# # EXTRA STEP: seed with simple update, gives trivial initial contraction but then things still go wrong
-# ψ₀ = InfiniteWeightPEPS(rand, Float64, ℂ^2, ℂ^χbond)
-# ψ₀.vertices[1, 1] /= norm(ψ₀.vertices[1, 1], Inf)
-
-# # simple update
-# dts = [1e-2, 1e-3, 4e-4, 1e-4]
-# tols = [1e-6, 1e-8, 1e-8, 1e-8]
-# maxiter = 10000
-# for (n, (dt, tol)) in enumerate(zip(dts, tols))
-#     trscheme = truncerr(1e-10) & truncdim(χbond)
-#     alg = SimpleUpdate(dt, tol, maxiter, trscheme)
-#     global ψ₀, = simpleupdate(ψ₀, H, alg; bipartite=false)
-# end
-# # absorb weight into site tensors
-# ψ₀ = InfinitePEPS(ψ₀)
 
 env₀, N, ϵ = leading_boundary(PullingThroughEnv(ψ₀, ℂ^χenv), ψ₀, pt_alg)
 ψ₀ = ψ₀ / sqrt(N)

@@ -183,48 +183,6 @@ function normalize_mps(A::MPSKit.GenericMPSTensor; tol=1e-14)
 end
 
 """
-    absorb_bond_unitary(A, U)
-
-Absorb a bond unitary into an MPS tensor.
-
-```
- ←A←  <--  ←U←A←U'←
-  ↓           ↓
-```
-"""
-@generated function absorb_bond_unitary(
-    A::MPSKit.GenericMPSTensor{S,N₁}, U::MPSKit.MPSBondTensor{S}
-) where {S,N₁}
-    A_out_e = tensorexpr(:A_out, -(1:N₁), -(N₁ + 1))
-    A_e = tensorexpr(:A, (1, (-(2:N₁))...), 2)
-    Ū_e = tensorexpr(:U, -(N₁ + 1), 2)
-    U_e = tensorexpr(:U, -1, 1)
-    return macroexpand(@__MODULE__, :(return @tensor $A_out_e := $U_e * $A_e * conj($Ū_e)))
-end
-
-"""
-    absorb_bond_matrices(A, X1, X2)
-
-Absorb left and right bond matrices into an MPS tensor.
-
-```
- ←A←  <--  ←X1←A←X2←
-  ↓            ↓
-```
-"""
-@generated function absorb_bond_matrices(
-    A::MPSKit.GenericMPSTensor{S,N₁},
-    X1::MPSKit.MPSBondTensor{S},
-    X2::MPSKit.MPSBondTensor{S},
-) where {S,N₁}
-    A_out_e = tensorexpr(:A_out, -(1:N₁), -(N₁ + 1))
-    XL_e = tensorexpr(:X1, -1, 1)
-    A_e = tensorexpr(:A, (1, (-(2:N₁))...), 2)
-    XR_e = tensorexpr(:X2, 2, -(N₁ + 1))
-    return macroexpand(@__MODULE__, :(return @tensor $A_out_e := $XL_e * $A_e * $XR_e))
-end
-
-"""
 Initialize an isometry between the physical spaces of two MPS tensors.
 """
 function physical_isometry(
@@ -329,7 +287,8 @@ end
 end
 
 function physical_flip(A::MPSKit.GenericMPSTensor{S,N₁}) where {S,N₁}
-    return apply_physical_unitary(A, physical_flipper(A))
+    # return apply_physical_unitary(A, physical_flipper(A))
+    return flip(A, 2:N₁)
 end
 
 # short-circuit this
@@ -442,28 +401,35 @@ struct SymmetricEnv{C<:MPSKit.MPSBondTensor,T<:MPSKit.GenericMPSTensor}
     A::T
 end
 
-# all the tricks to symmetrize the environment
-function symmetric_environment(
-    env::PullingThroughEnv,
-    Up0::SquareTensorMap=physical_isometry(env.N, env.W); # TODO: update to use externally supplied physical unitary
+function symmetric_environment(::Val{:center}, args...; kwargs...)
+    return center_gauge_environment(args...; kwargs...)
+end
+
+function symmetric_environment(::Val{:left}, args...; kwargs...)
+    return left_gauge_environment(args...; kwargs...)
+end
+
+function diagonalize_corner(
+    X::MPSKit.MPSBondTensor{S},
+    N::MPSKit.GenericMPSTensor{S,N₁},
+    W::MPSKit.GenericMPSTensor{S,N₁},
+) where {S,N₁}
+    u, X, v = tsvd(X, (1,), (2,))
+    N = absorb_bond_unitary(N, v)
+    W = absorb_bond_unitary(W, u')
+    return X, N, W
+end
+
+function match_edges(
+    X::MPSKit.MPSBondTensor{S},
+    N::MPSKit.GenericMPSTensor{S,N₁},
+    W::MPSKit.GenericMPSTensor{S,N₁},
+    Up0::SquareTensorMap=physical_isometry(N, W); # TODO: update to use externally supplied physical unitary
     tol_conv=Defaults.ctmrg_tol,
     tol_eigs=MPSKit.Defaults.tol,
     maxiter=1000,
     verbosity=1,
-)
-    # check convergence and unpack
-    norm(env.LN - env.RW) < tol_conv ||
-        @warn "Pulling through contraction is not converged!"
-    N = env.N
-    W = env.W
-    X = env.LN
-
-    # diagonalize corner tensor
-    u, X, v = tsvd(X, (1,), (2,))
-    N = absorb_bond_unitary(N, v)
-    W = absorb_bond_unitary(W, u')
-
-    # match north and west edges:
+) where {S,N₁}
     # find the left fixed point of the generalized left transfer matrix
     Q0 = MPSKit.randomize!(similar(N, space(W, 1) ← space(N, 1)))
     λ, Q = MPSKit.fixedpoint(gen_transfer_left(N, W, Up0), Q0, :LM; tol=tol_eigs)
@@ -477,21 +443,114 @@ function symmetric_environment(
     Up = Up0 # skip physical unitary optimization for now
 
     # absorb the unitary into the corner tensor and update the north and west edges
-    Xm, V, = schur(Q' * X) # TODO: figure out purely imaginary Xm?
+    Xm, V, = schur(Q' * X)
     Nm = absorb_bond_unitary(N, V')
     Wm = absorb_bond_unitary(W, (Q * V)')
 
     # one more time, just to be sure...
     λ, = MPSKit.fixedpoint(gen_transfer_left(Nm, Wm, Up), Q, :LM; tol=tol_eigs)
 
-    # impose normalization on X
-    Xm = Xm / (tr(Xm^4)^(1 / 4)) # TODO: daggers or not?
+    return Xm, Nm, Wm, Up, λ
+end
 
-    # impose hermiticity on Nm
-    Nm_dag = _conj(Nm)
-    N̄m = physical_flip(Nm_dag) # TODO: update to use externally supplied physical unitary
-    Nm = (Nm + N̄m) / 2
-    Nm = normalize_mps(Nm)
+function center_gauge_environment(
+    env::PullingThroughEnv;
+    tol_conv=Defaults.ctmrg_tol,
+    tol_eigs=MPSKit.Defaults.tol,
+    maxiter=1000,
+    verbosity=1,
+)
+    # check convergence and unpack
+    norm(env.LN - env.RW) < tol_conv ||
+        @warn "Pulling through contraction is not converged!"
+    N = env.N
+    W = env.W
+    X = env.LN
+
+    # diagonalize corner tensor
+    X, N, W = diagonalize_corner(X, N, W)
+
+    # match north and west edges
+    Xm, Nm, Wm, Up, λ = match_edges(X, N, W; tol_conv, tol_eigs, maxiter, verbosity)
+    # check if the edges are now actually the same
+    ovlp = tr(Nm' * PEPSKit.apply_physical_unitary(Wm, Up')) / (norm(Nm) * norm(Wm))
+    isapprox(abs(ovlp), 1.0; atol=tol_conv) ||
+        @warn "Edges are not the same after symmetrization: abs(ovlp)=$(abs(ovlp))"
+
+    # impose normalization on X
+    Xm = Xm / (tr(Xm^4)^(1 / 4))
+    # get rid of spurious phases caused by root
+    phase = round(Int, angle(first(Xm.data)) * 2 / pi) % 4
+    if phase != 0
+        Xm = exp(im * phase * pi / 2) * Xm
+    end
+    # check if the corner is real enough
+    norm(imag(Xm)) < tol_conv ||
+        @warn "Corner tensor is not real enough: norm(imag(Xm))=$(norm(imag(Xm)))"
+
+    # check hermiticity of Nm
+    N̄m = physical_flip(_conj(Nm)) # TODO: update to use externally supplied physical unitary
+    if norm(Nm - N̄m) > tol_conv
+        phase = angle(dot(Nm, N̄m))
+        scale!(Nm, exp(im * phase / 2))
+        N̄m = physical_flip(_conj(Nm))
+        norm(Nm - N̄m) < tol_conv ||
+            @warn "North edge is not hermitian enough: norm(Nm - N̄m)=$(norm(Nm - N̄m))"
+    end
+    Nm = normalize_mps(Nm) # just to be absolutely safe
+
+    return SymmetricEnv(Xm, Nm), Up, Wm, λ
+end
+
+function left_gauge_environment(
+    env::PullingThroughEnv;
+    tol_conv=Defaults.ctmrg_tol,
+    tol_eigs=MPSKit.Defaults.tol,
+    maxiter=1000,
+    verbosity=1,
+)
+    # check convergence and unpack
+    norm(env.LN - env.RW) < tol_conv ||
+        @warn "Pulling through contraction is not converged!"
+    N = env.NL
+    W = _conj(env.WR)
+    # @show norm(W' * W - id(domain(W))) # this is actually a left isometry, which is good
+    X = env.LN
+
+    # diagonalize corner tensor
+    X, N, W = diagonalize_corner(X, N, W)
+
+    # match north and west edges
+    Xm, Nm, Wm, Up, λ = match_edges(X, N, W; tol_conv, tol_eigs, maxiter, verbosity)
+    # check if the edges are now actually the same
+    ovlp = tr(Nm' * PEPSKit.apply_physical_unitary(Wm, Up')) / (norm(Nm) * norm(Wm))
+    isapprox(abs(ovlp), 1.0; atol=tol_conv) ||
+        @warn "Edges are not the same after symmetrization: abs(ovlp)=$(abs(ovlp))"
+
+    # impose normalization on X
+    Xm = Xm / (tr(Xm^4)^(1 / 4))
+    # get rid of spurious phases caused by root
+    phase = round(Int, angle(first(Xm.data)) * 2 / pi) % 4
+    if phase != 0
+        Xm = exp(im * phase * pi / 2) * Xm
+    end
+    # check if the corner is real enough
+    norm(imag(Xm)) < tol_conv ||
+        @warn "Corner tensor is not real enough: norm(imag(Xm))=$(norm(imag(Xm)))"
+
+    # check hermiticity of Nm
+    N̄m = physical_flip(_conj(Nm)) # TODO: update to use externally supplied physical unitary
+    C2N̄m = absorb_left_bond_matrix(N̄m, Xm^2)
+    NmC2 = absorb_right_bond_matrix(Nm, Xm^2)
+    if norm(C2N̄m - NmC2) > tol_conv
+        phase = angle(dot(Nm, N̄m))
+        scale!(Nm, exp(im * phase / 2))
+        C2N̄m = absorb_left_bond_matrix(physical_flip(_conj(Nm)), Xm^2)
+        NmC2 = absorb_right_bond_matrix(Nm, Xm^2)
+        norm(NmC2 - C2N̄m) < tol_conv ||
+            @warn "North edge is not hermitian enough: norm(Nm - N̄m)=$(norm(NmC2 - C2N̄m))"
+    end
+    Nm = normalize_mps(Nm) # just to be absolutely safe
 
     return SymmetricEnv(Xm, Nm), Up, Wm, λ
 end

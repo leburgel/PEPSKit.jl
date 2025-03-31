@@ -39,12 +39,12 @@ include("operators/models.jl")
 
 include("environments/ctmrg_environments.jl")
 include("environments/vumps_environments.jl")
+include("algorithms/contractions/pulling_through_contractions.jl")
 include("environments/pulling_through_environments.jl")
 
 include("algorithms/contractions/ctmrg_contractions.jl")
 include("algorithms/contractions/localoperator.jl")
 include("algorithms/contractions/vumps_contractions.jl")
-include("algorithms/contractions/pulling_through_contractions.jl")
 include("algorithms/contractions/bondenv/benv_tools.jl")
 include("algorithms/contractions/bondenv/als_solve.jl")
 
@@ -83,7 +83,7 @@ export FixedSpaceTruncation, HalfInfiniteProjector, FullInfiniteProjector
 export LocalOperator
 export expectation_value, cost_function, product_peps, correlation_length, network_value
 export leading_boundary
-export PEPSOptimize, GeomSum, ManualIter, LinSolver, EigSolver, LSSolver
+export PEPSOptimize, GeomSum, ManualIter, LinSolver, EigSolver, PTLSSolver
 export fixedpoint
 
 export absorb_weight

@@ -167,25 +167,6 @@ EigSolver(; kwargs...) = GradMode(; alg=:eigsolver, kwargs...)
 
 GRADIENT_MODE_SYMBOLS[:eigsolver] = EigSolver
 
-"""
-    struct LSSolver(; solver=KrylovKit.GMRES(), iterscheme=:rectangular) <: GradMode{iterscheme}
-
-Gradient mode wrapper around `KrylovKit.LeastSquaresSolver` for solving the gradient linear
-problem using iterative solvers.
-
-Use for computing the pulling-through fixed-point gradient, where the `iterscheme` encodes
-the formulation of the fixed-point equations that is used (:rectangular or :square).
-"""
-struct LSSolver{F} <: GradMode{F}
-    solver_alg::KrylovKit.LeastSquaresSolver
-end
-function LSSolver(;
-    solver_alg=KrylovKit.LSMR(; maxiter=Defaults.fpgrad_maxiter, tol=Defaults.fpgrad_tol),
-    iterscheme=:rectangular,
-)
-    return LSSolver{iterscheme}(solver_alg)
-end
-
 #=
 Evaluating the gradient of the cost function for CTMRG:
 - The gradient of the cost function for CTMRG can be computed using automatic differentiation (AD) or explicit evaluation of the geometric sum.

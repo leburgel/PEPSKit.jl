@@ -9,6 +9,7 @@ Pulling-through contraction algorithm.
     miniter::Int = Defaults.pt_miniter
     verbosity::Int = Defaults.pt_verbosity
     finalize::F = Defaults._finalize
+    gauge::Symbol = :center
 
     dynamic_tols::Bool = Defaults.dynamic_tols
     alg_gauge = Defaults.pt_alg_gauge(; dynamic_tols)
@@ -134,7 +135,7 @@ function MPSKit.leading_boundary(
     env, N, ϵ = pulling_through_iterate(envinit, network, alg)
 
     # gauge-fix and symmetrize
-    env, = symmetric_environment(env)
+    env, = symmetric_environment(Val(alg.gauge), env)
 
     # TODO: temporarily unpack SymmetricEnv to avoid issues?
     return env, N, ϵ

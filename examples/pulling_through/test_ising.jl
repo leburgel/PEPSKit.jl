@@ -15,7 +15,7 @@ include(joinpath(@__DIR__, "..", "spatial_symmetries", "spatial_toolbox.jl"))
 
 # model
 J = 1.0
-g = 4.0
+g = 3.0
 
 # PEPS parameters
 Dbond = 3
@@ -31,16 +31,17 @@ alg_orth = Polar()
 dynamic_tols = true
 # dynamic_tols = false
 boundary_alg = PullingThrough(;
-    tol=1e-8,
+    tol=1e-10,
     maxiter=500,
     miniter=4,
     verbosity=2,
     dynamic_tols,
     alg_gauge=PEPSKit.Defaults.pt_alg_gauge(; dynamic_tols, alg_orth),
 )
-gradient_alg = LSSolver(;
-    solver_alg=KrylovKit.LSMR(; maxiter=500, tol=1e-6, verbosity=2, krylovdim=500),
-    iterscheme=:rectangular,
+gradient_alg = PTLSSolver(;
+    solver_alg=KrylovKit.LSMR(; maxiter=1_000, tol=1e-10, verbosity=2, krylovdim=1_000),
+    gauge=:center,
+    style=:naive,
 )
 ls_alg = ls_alg = BackTrackingLineSearch(; c₁=1e-4, maxiter=10, maxfg=10, maxstep=5.0)
 optimizer_alg = LBFGS(

@@ -17,6 +17,12 @@ using KrylovKit
 
 include("$(@__DIR__)/symmetrization.jl")
 
+using Logging
+using LoggingExtras
+
+file_logger = MinLevelLogger(FileLogger("logfile.txt"), Logging.Info)
+global_logger(file_logger)
+
 ## Test models, gradmodes and CTMRG algorithm
 # -------------------------------------------
 χbond = 2
@@ -29,30 +35,49 @@ names = ["Heisenberg", "Ising"]
 symm = MyRotateReflect()
 # no spatial symmetries for the p-wave superconductor, using Ising instead...
 
-gradtol = 1e-4
+boundary_tol = 1e-12
+boundary_maxiter = 500
+boundary_verbosity = 2
+boundary_gauge = :center
+
+fpgrad_style = :naive
+fpgrad_tol = 1e-8
+
 pt_algs = [
-    [PullingThrough(; tol=1e-10, verbosity=2, maxiter=500)],
-    [PullingThrough(; tol=1e-10, verbosity=2, maxiter=500)],
-]
-gradmodes = [
     [
-        LinSolver(;
-            solver_alg=KrylovKit.GMRES(; tol=gradtol, maxiter=200, krylovdim=100),
-            iterscheme=:square,
-        ),
-        LSSolver(;
-            solver_alg=KrylovKit.LSMR(; tol=gradtol, maxiter=200, krylovdim=100),
-            iterscheme=:rectangular,
+        PullingThrough(;
+            tol=boundary_tol,
+            verbosity=boundary_verbosity,
+            maxiter=boundary_maxiter,
+            gauge=boundary_gauge,
         ),
     ],
     [
-        LinSolver(;
-            solver_alg=KrylovKit.GMRES(; tol=gradtol, maxiter=200, krylovdim=100),
-            iterscheme=:square,
+        PullingThrough(;
+            tol=boundary_tol,
+            verbosity=boundary_verbosity,
+            maxiter=boundary_maxiter,
+            gauge=boundary_gauge,
         ),
-        LSSolver(;
-            solver_alg=KrylovKit.LSMR(; tol=gradtol, maxiter=200, krylovdim=100),
-            iterscheme=:rectangular,
+    ],
+]
+gradmodes = [
+    [
+        PTLSSolver(;
+            solver_alg=KrylovKit.LSMR(;
+                tol=fpgrad_tol, maxiter=1000, krylovdim=1000, verbosity=2
+            ),
+            gauge=boundary_gauge,
+            style=fpgrad_style,
+        ),
+    ],
+    [
+        PTLSSolver(;
+            solver_alg=KrylovKit.LSMR(;
+                tol=fpgrad_tol, maxiter=1000, krylovdim=1000, verbosity=2
+            ),
+            gauge=boundary_gauge,
+            style=fpgrad_style,
         ),
     ],
 ]
@@ -91,7 +116,6 @@ steps = -0.01:0.005:0.01
                 env2, = PEPSKit.hook_pullback(leading_boundary, envs, psi, pt_alg; alg_rrule)
                 return cost_function(psi, env2, models[i])
             end
-            # TODO: symmetrize the gradient here?
             g = only(gs)
             symmetrize!(g, symm)
             check_symmetry(g, symm)
