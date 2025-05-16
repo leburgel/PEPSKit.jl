@@ -41,7 +41,7 @@ opt_alg = PEPSOptimize(;
             maxiter=500, tol=PEPSKit.Defaults.gradient_tol, verbosity=2, krylovdim=500
         ),
         gauge=:center,
-        style=:naive,
+        style=:regularized,
     ),
     reuse_env=true,
     symmetrization=symm,
@@ -71,7 +71,9 @@ end
 env₀, N, ϵ = leading_boundary(PullingThroughEnv(ψ₀, ℂ^χenv), ψ₀, pt_alg)
 ψ₀ = ψ₀ / sqrt(N)
 
-result = fixedpoint(H, ψ₀, env₀, opt_alg; (finalize!)=(my_finalize!))
-@show result.E
+peps_final, env_final, cost, info = fixedpoint(
+    H, ψ₀, env₀, opt_alg; (finalize!)=(my_finalize!)
+)
+@show cost
 
 nothing

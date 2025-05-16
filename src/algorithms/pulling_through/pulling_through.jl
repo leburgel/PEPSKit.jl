@@ -137,6 +137,10 @@ function MPSKit.leading_boundary(
     # gauge-fix and symmetrize
     env, = symmetric_environment(Val(alg.gauge), env)
 
+    # TODO: make the eigenvalue real
+    abs(imag(N)) > alg.tol && @warn "Eigenvalue is not real: $(imag(N))"
+    N = real(N)
+
     # TODO: temporarily unpack SymmetricEnv to avoid issues?
     return env, N, ϵ
 end

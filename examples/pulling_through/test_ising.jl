@@ -18,7 +18,7 @@ J = 1.0
 g = 3.0
 
 # PEPS parameters
-Dbond = 3
+Dbond = 2
 Denv = 20
 symm_style = HReflectionRotation()
 unitcell_style = Asymmetric() # flip south and west
@@ -39,9 +39,9 @@ boundary_alg = PullingThrough(;
     alg_gauge=PEPSKit.Defaults.pt_alg_gauge(; dynamic_tols, alg_orth),
 )
 gradient_alg = PTLSSolver(;
-    solver_alg=KrylovKit.LSMR(; maxiter=1_000, tol=1e-10, verbosity=2, krylovdim=1_000),
+    solver_alg=KrylovKit.LSMR(; maxiter=1_000, tol=1e-6, verbosity=2, krylovdim=1_000),
     gauge=:center,
-    style=:naive,
+    style=:regularized, # :naive, # :regularized,
 )
 ls_alg = ls_alg = BackTrackingLineSearch(; c₁=1e-4, maxiter=10, maxfg=10, maxstep=5.0)
 optimizer_alg = LBFGS(

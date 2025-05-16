@@ -453,6 +453,31 @@ function match_edges(
     return Xm, Nm, Wm, Up, λ
 end
 
+function normalize_corner(X::MPSKit.MPSBondTensor{S}; tol=1e-14) where {S}
+    # impose normalization on X
+    X /= (tr(X^4)^(1 / 4))
+
+    # get rid of spurious phases caused by root
+    fisrt_element = first(first(diag(X))[2])
+    phase = round(Int, angle(fisrt_element) * 2 / pi) % 4
+    if phase != 0
+        X = exp(im * phase * pi / 2) * X
+    end
+
+    # make corner tensor to be diagonal
+    Xd = DiagonalTensorMap(X)
+    norm(X - Xd) < tol ||
+        @warn "Corner tensor is not diagonal enough: norm(X - diag(X))=$(norm(X - Xd))"
+    X = Xd
+
+    # make corner tensor real
+    norm(imag(X)) < tol ||
+        @warn "Corner tensor is not real enough: norm(imag(X))=$(norm(imag(X)))"
+    X = real(X)
+
+    return X
+end
+
 function center_gauge_environment(
     env::PullingThroughEnv;
     tol_conv=Defaults.ctmrg_tol,
@@ -478,15 +503,7 @@ function center_gauge_environment(
         @warn "Edges are not the same after symmetrization: abs(ovlp)=$(abs(ovlp))"
 
     # impose normalization on X
-    Xm = Xm / (tr(Xm^4)^(1 / 4))
-    # get rid of spurious phases caused by root
-    phase = round(Int, angle(first(Xm.data)) * 2 / pi) % 4
-    if phase != 0
-        Xm = exp(im * phase * pi / 2) * Xm
-    end
-    # check if the corner is real enough
-    norm(imag(Xm)) < tol_conv ||
-        @warn "Corner tensor is not real enough: norm(imag(Xm))=$(norm(imag(Xm)))"
+    Xm = normalize_corner(Xm; tol=tol_conv)
 
     # check hermiticity of Nm
     N̄m = physical_flip(_conj(Nm)) # TODO: update to use externally supplied physical unitary
@@ -528,15 +545,7 @@ function left_gauge_environment(
         @warn "Edges are not the same after symmetrization: abs(ovlp)=$(abs(ovlp))"
 
     # impose normalization on X
-    Xm = Xm / (tr(Xm^4)^(1 / 4))
-    # get rid of spurious phases caused by root
-    phase = round(Int, angle(first(Xm.data)) * 2 / pi) % 4
-    if phase != 0
-        Xm = exp(im * phase * pi / 2) * Xm
-    end
-    # check if the corner is real enough
-    norm(imag(Xm)) < tol_conv ||
-        @warn "Corner tensor is not real enough: norm(imag(Xm))=$(norm(imag(Xm)))"
+    Xm = normalize_corner(Xm; tol=tol_conv)
 
     # check hermiticity of Nm
     N̄m = physical_flip(_conj(Nm)) # TODO: update to use externally supplied physical unitary
@@ -572,137 +581,8 @@ function update!(env::SymmetricEnv{C,T}, env´::SymmetricEnv{C,T}) where {C,T}
     return env
 end
 
-# Custom adjoint for SymmetricEnv constructor, needed for fixed-point differentiation
-function ChainRulesCore.rrule(::Type{SymmetricEnv}, X, A)
-    env = SymmetricEnv(X, A)
-    function symmetricenv_pullback(Δenv)
-        Δenv = unthunk(Δenv)
-        return NoTangent(), Δenv.X, Δenv.A
-    end
-    return env, symmetricenv_pullback
-end
-
-# Custom adjoint for SymmetricEnv getproperty, to avoid creating named tuples in backward pass
-function ChainRulesCore.rrule(::typeof(getproperty), e::SymmetricEnv, name::Symbol)
-    result = getproperty(e, name)
-    if name === :X
-        function corner_pullback(ΔX)
-            ΔX = unthunk(ΔX)
-            return NoTangent(), SymmetricEnv(ΔX, zerovector(e.A)), NoTangent()
-        end
-        return result, corner_pullback
-    elseif name === :A
-        function edge_pullback(ΔA)
-            ΔA = unthunk(ΔA)
-            return NoTangent(), SymmetricEnv(zerovector(e.X), ΔA), NoTangent()
-        end
-        return result, edge_pullback
-    else
-        # this should never happen because already errored in forwards pass
-        throw(ArgumentError("No rrule for getproperty of $name"))
-    end
-end
-
-# Functions used for FP differentiation and by KrylovKit.linsolve
-function Base.:+(e₁::SymmetricEnv, e₂::SymmetricEnv)
-    return SymmetricEnv(e₁.X + e₂.X, e₁.A + e₂.A)
-end
-function Base.:-(e₁::SymmetricEnv, e₂::SymmetricEnv)
-    return SymmetricEnv(e₁.X - e₂.X, e₁.A - e₂.A)
-end
-Base.:*(α::Number, e::SymmetricEnv) = SymmetricEnv(α * e.X, α * e.A)
-Base.:*(e::SymmetricEnv, α::Number) = α * e
-Base.similar(e::SymmetricEnv) = SymmetricEnv(similar(e.X), similar(e.A))
-
-function LinearAlgebra.mul!(edst::SymmetricEnv, esrc::SymmetricEnv, α::Number)
-    mul!(edst.X, esrc.X, α)
-    mul!(edst.A, esrc.A, α)
-    return edst
-end
-
-function LinearAlgebra.rmul!(e::SymmetricEnv, α::Number)
-    rmul!(e.X, α)
-    rmul!(e.A, α)
-    return e
-end
-
-function LinearAlgebra.axpy!(α::Number, e₁::SymmetricEnv, e₂::SymmetricEnv)
-    axpy!(α, e₁.X, e₂.X)
-    axpy!(α, e₁.A, e₂.A)
-    return e₂
-end
-
-function LinearAlgebra.axpby!(α::Number, e₁::SymmetricEnv, β::Number, e₂::SymmetricEnv)
-    axpby!(α, e₁.X, β, e₂.X)
-    axpby!(α, e₁.A, β, e₂.A)
-    return e₂
-end
-
-function LinearAlgebra.dot(e₁::SymmetricEnv, e₂::SymmetricEnv)
-    return dot(e₁.X, e₂.X) + dot(e₁.A, e₂.A)
-end
-
-# VectorInterface
-# ---------------
-
-# Note: the following methods consider the environment tensors as separate components of one
-# big vector. In other words, the associated vector space is not the natural one associated
-# to the original (physical) system, and addition, scaling, etc. are performed element-wise.
-
-import VectorInterface as VI
-
 function VI.scalartype(::Type{SymmetricEnv{C,T}}) where {C,T}
     S₁ = scalartype(C)
     S₂ = scalartype(T)
     return promote_type(S₁, S₂)
 end
-
-function VI.zerovector(env::SymmetricEnv, ::Type{S}) where {S<:Number}
-    _zerovector = Base.Fix2(zerovector, S)
-    return SymmetricEnv(_zerovector(env.X), _zerovector(env.A))
-end
-function VI.zerovector!(env::SymmetricEnv)
-    zerovector!(env.X)
-    zerovector!(env.A)
-    return env
-end
-VI.zerovector!!(env::SymmetricEnv) = zerovector!(env)
-
-function VI.scale(env::SymmetricEnv, α::Number)
-    _scale = Base.Fix2(scale, α)
-    return SymmetricEnv(_scale(env.X), _scale(env.A))
-end
-function VI.scale!(env::SymmetricEnv, α::Number)
-    _scale! = Base.Fix2(scale!, α)
-    _scale!(env.X)
-    _scale!(env.A)
-    return env
-end
-function VI.scale!(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number)
-    _scale!(x, y) = scale!(x, y, α)
-    _scale!(env₁.X, env₂.X)
-    _scale!(env₁.A, env₂.A)
-    return env₁
-end
-VI.scale!!(env::SymmetricEnv, α::Number) = scale!(env, α)
-VI.scale!!(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number) = scale!(env₁, env₂, α)
-
-function VI.add(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number, β::Number)
-    _add(x, y) = add(x, y, α, β)
-    return SymmetricEnv(_add(env₁.X, env₂.X), _add(env₁.A, env₂.A))
-end
-function VI.add!(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number, β::Number)
-    _add!(x, y) = add!(x, y, α, β)
-    _add!(env₁.X, env₂.X)
-    _add!(env₁.A, env₂.A)
-    return env₁
-end
-function VI.add!!(env₁::SymmetricEnv, env₂::SymmetricEnv, α::Number, β::Number)
-    return add!(env₁, env₂, α, β)
-end
-
-# Exploiting the fact that VectorInterface works for tuples:
-function VI.inner(env₁::SymmetricEnv, env₂::SymmetricEnv)
-    return inner((env₁.X, env₁.A), (env₂.X, env₂.A))
-end
-VI.norm(env::SymmetricEnv) = norm((env.X, env.A))

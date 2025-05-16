@@ -14,18 +14,13 @@ using TensorKit
 using Zygote
 using OptimKit
 using KrylovKit
+using JLD2
 
 include("$(@__DIR__)/symmetrization.jl")
 
-using Logging
-using LoggingExtras
-
-file_logger = MinLevelLogger(FileLogger("logfile.txt"), Logging.Info)
-global_logger(file_logger)
-
 ## Test models, gradmodes and CTMRG algorithm
 # -------------------------------------------
-χbond = 2
+χbond = 3
 χenv = 20
 Pspaces = [ComplexSpace(2), ComplexSpace(2)]
 Vspaces = [ComplexSpace(χbond), ComplexSpace(χbond)]
@@ -40,8 +35,10 @@ boundary_maxiter = 500
 boundary_verbosity = 2
 boundary_gauge = :center
 
-fpgrad_style = :naive
-fpgrad_tol = 1e-8
+# fpgrad_style = :naive
+fpgrad_style = :regularized
+fpgrad_tol = 1e-6
+fpgrad_verbosity = 3
 
 pt_algs = [
     [
@@ -65,7 +62,7 @@ gradmodes = [
     [
         PTLSSolver(;
             solver_alg=KrylovKit.LSMR(;
-                tol=fpgrad_tol, maxiter=1000, krylovdim=1000, verbosity=2
+                tol=fpgrad_tol, maxiter=1000, krylovdim=1000, verbosity=fpgrad_verbosity
             ),
             gauge=boundary_gauge,
             style=fpgrad_style,
@@ -74,7 +71,7 @@ gradmodes = [
     [
         PTLSSolver(;
             solver_alg=KrylovKit.LSMR(;
-                tol=fpgrad_tol, maxiter=1000, krylovdim=1000, verbosity=2
+                tol=fpgrad_tol, maxiter=1000, krylovdim=1000, verbosity=fpgrad_verbosity
             ),
             gauge=boundary_gauge,
             style=fpgrad_style,
@@ -83,21 +80,25 @@ gradmodes = [
 ]
 steps = -0.01:0.005:0.01
 
+# remove cached solutions
+rm("stupid_pullback_cache.jld2"; force=true)
+
 ## Tests
 # ------
 @testset "AD pulling-through energy gradients for $(names[i]) model" verbose = true for i in
                                                                                         eachindex(
     models
 )
+    # i = 2 # test specific model
     Pspace = Pspaces[i]
-    Vspace = Pspaces[i]
+    Vspace = Vspaces[i]
     Espace = Espaces[i]
     gms = gradmodes[i]
     ptalgs = pt_algs[i]
     @testset "$pt_alg and $alg_rrule" for (pt_alg, alg_rrule) in
                                           Iterators.product(ptalgs, gms)
         @info "optimtest of $pt_alg and $alg_rrule on $(names[i])"
-        # Random.seed!(42039482030) # bad seed for pulling through it seems
+        Random.seed!(42039482035)
         dir = InfinitePEPS(Pspace, Vspace, Vspace)
         psi = InfinitePEPS(Pspace, Vspace, Vspace)
         psi = symmetrize!(psi, symm)

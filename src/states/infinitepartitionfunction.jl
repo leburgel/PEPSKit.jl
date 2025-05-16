@@ -183,3 +183,39 @@ end
 function Base.rot180(A::InfinitePartitionFunction)
     return InfinitePartitionFunction(rot180(rot180.(unitcell(A))))
 end
+
+## Chainrules
+
+function ChainRulesCore.rrule(::Type{InfinitePartitionFunction}, A::Matrix{<:PFTensor})
+    network = InfinitePartitionFunction(A)
+    function InfinitePartitionFunction_pullback(Δnetwork_)
+        Δnetwork = unthunk(Δnetwork_)
+        return NoTangent(), unitcell(Δnetwork)
+    end
+    return network, InfinitePartitionFunction_pullback
+end
+
+function ChainRulesCore.rrule(
+    ::typeof(Base.getindex), network::InfinitePartitionFunction, args...
+)
+    tensor = network[args...]
+
+    function getindex_pullback(Δtensor_)
+        Δtensor = unthunk(Δtensor_)
+        Δnetwork = zerovector(network)
+        Δnetwork[args...] = Δtensor
+        return NoTangent(), Δnetwork, NoTangent(), NoTangent()
+    end
+    return tensor, getindex_pullback
+end
+
+function ChainRulesCore.rrule(::Type{InfiniteSquareNetwork}, pf::InfinitePartitionFunction)
+    network = InfiniteSquareNetwork(pf)
+
+    function InfiniteSquareNetwork_pullback(Δnetwork_)
+        Δnetwork = unthunk(Δnetwork_)
+        Δpf = InfinitePartitionFunction(unitcell(Δnetwork))
+        return NoTangent(), Δpf
+    end
+    return network, InfiniteSquareNetwork_pullback
+end

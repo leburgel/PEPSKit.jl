@@ -37,12 +37,19 @@ end
 function herm_depth(x::PEPOTensor)
     return permute(x', ((5, 6), (3, 2, 1, 4)))
 end
+function herm_depth(x::PartitionFunctionTensor)
+    @tensor x´[W N; S E] := conj(x[W S; N E])
+    return x´
+end
 
 function herm_width(x::PEPSTensor)
     return permute(x', ((5,), (1, 4, 3, 2)))
 end
 function herm_width(x::PEPOTensor)
     return permute(x', ((5, 6), (1, 4, 3, 2)))
+end
+function herm_width(::PartitionFunctionTensor)
+    return error("Not implemented yet...")
 end
 
 function herm_height(x::PEPOTensor)
@@ -70,15 +77,15 @@ function _fit_spaces(
 end
 _fit_spaces(y::InfinitePEPS, x::InfinitePEPS) = InfinitePEPS(map(_fit_spaces, y.A, x.A))
 
-function herm_depth_inv(x::Union{PEPSTensor,PEPOTensor})
+function herm_depth_inv(x)
     return 0.5 * (x + _fit_spaces(herm_depth(x), x))
 end
 
-function herm_width_inv(x::Union{PEPSTensor,PEPOTensor})
+function herm_width_inv(x)
     return 0.5 * (x + _fit_spaces(herm_width(x), x))
 end
 
-function herm_height_inv(x::PEPOTensor)
+function herm_height_inv(x)
     return 0.5 * (x + _fit_spaces(herm_height(x), x))
 end
 

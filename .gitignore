@@ -3,3 +3,5 @@ Manifest.toml
 examples/.ipynb_checkpoints
 .vscode/
 .DS_Store
+setup_env.jl
+*.txt

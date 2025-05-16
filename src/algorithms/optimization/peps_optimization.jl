@@ -199,7 +199,9 @@ function fixedpoint(
     end
 
     # :fixed mode compatibility
-    if !isnothing(alg.gradient_alg) && iterscheme(alg.gradient_alg) == :fixed
+    if alg.boundary_alg isa CTMRGAlgorithm &&
+        !isnothing(alg.gradient_alg) &&
+        iterscheme(alg.gradient_alg) == :fixed
         if scalartype(env₀) <: Real # incompatible with real environments
             env₀ = complex(env₀)
             @warn "the provided real environment was converted to a complex environment \
