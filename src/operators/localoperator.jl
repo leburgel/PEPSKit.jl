@@ -1,36 +1,37 @@
 # Hamiltonian consisting of local terms
 # -------------------------------------
 """
-    struct LocalOperator{T<:Tuple,S}
+$(TYPEDEF)
 
 A sum of local operators acting on a lattice. The lattice is stored as a matrix of vector spaces,
 and the terms are stored as a tuple of pairs of indices and operators.
 
-# Fields
+## Fields
 
 - `lattice::Matrix{S}`: The lattice on which the operator acts.
 - `terms::T`: The terms of the operator, stored as a tuple of pairs of indices and operators.
 
-# Constructors
+## Constructors
 
     LocalOperator(lattice::Matrix{S}, terms::Pair...)
-    LocalOperator{T,S}(lattice::Matrix{S}, terms::T) where {T,S} # expert mode
+    LocalOperator{T,S}(lattice::Matrix{S}, terms::T) where {T,S}
 
-# Examples
+## Examples
 
 ```julia
 lattice = fill(ℂ^2, 1, 1) # single-site unitcell
 O1 = LocalOperator(lattice, ((1, 1),) => σx, ((1, 1), (1, 2)) => σx ⊗ σx, ((1, 1), (2, 1)) => σx ⊗ σx)
 ```
 """
-struct LocalOperator{T<:Tuple,S}
+struct LocalOperator{T <: Tuple, S}
     lattice::Matrix{S}
     terms::T
-    function LocalOperator{T,S}(lattice::Matrix{S}, terms::T) where {T,S}
+    function LocalOperator{T, S}(lattice::Matrix{S}, terms::T) where {T, S}
         plattice = PeriodicArray(lattice)
         # Check if the indices of the operator are valid with themselves and the lattice
         for (inds, operator) in terms
             @assert operator isa AbstractTensorMap
+            @assert eltype(inds) <: CartesianIndex
             @assert numout(operator) == numin(operator) == length(inds)
             @assert spacetype(operator) == S
 
@@ -38,25 +39,29 @@ struct LocalOperator{T<:Tuple,S}
                 @assert space(operator, i) == plattice[inds[i]]
             end
         end
-        return new{T,S}(lattice, terms)
+        return new{T, S}(lattice, terms)
     end
 end
 function LocalOperator(
-    lattice::Matrix,
-    terms::Pair...;
-    atol=maximum(x -> eps(real(scalartype(x[2])))^(3 / 4), terms),
-)
+        lattice::Matrix, terms::Pair...;
+        atol = maximum(x -> eps(real(scalartype(x[2])))^(3 / 4), terms),
+    )
     allinds = getindex.(terms, 1)
     alloperators = getindex.(terms, 2)
 
     relevant_terms = []
     for inds in unique(allinds)
         operator = sum(alloperators[findall(==(inds), allinds)])
-        norm(operator) > atol && push!(relevant_terms, inds => operator)
+        cinds = if !(eltype(inds) <: CartesianIndex) # force indices to be CartesianIndices
+            map(CartesianIndex, inds)
+        else
+            inds
+        end
+        norm(operator) > atol && push!(relevant_terms, cinds => operator)
     end
 
     terms_tuple = Tuple(relevant_terms)
-    return LocalOperator{typeof(terms_tuple),eltype(lattice)}(lattice, terms_tuple)
+    return LocalOperator{typeof(terms_tuple), eltype(lattice)}(lattice, terms_tuple)
 end
 
 """
@@ -69,14 +74,24 @@ while the second version throws an error if the lattices do not match.
 function checklattice(args...)
     return checklattice(Bool, args...) || throw(ArgumentError("Lattice mismatch."))
 end
+checklattice(::Type{Bool}, arg) = true
+function checklattice(::Type{Bool}, arg1, arg2, args...)
+    return checklattice(Bool, arg1, arg2) && checklattice(Bool, arg2, args...)
+end
 function checklattice(::Type{Bool}, H1::LocalOperator, H2::LocalOperator)
-    return H1.lattice == H2.lattice
+    return physicalspace(H1) == physicalspace(H2)
 end
 function checklattice(::Type{Bool}, peps::InfinitePEPS, O::LocalOperator)
-    return size(peps) == size(O.lattice)
+    return physicalspace(peps) == physicalspace(O)
 end
 function checklattice(::Type{Bool}, H::LocalOperator, peps::InfinitePEPS)
     return checklattice(Bool, peps, H)
+end
+function checklattice(::Type{Bool}, pepo::InfinitePEPO, O::LocalOperator)
+    return size(pepo, 3) == 1 && physicalspace(pepo) == physicalspace(O)
+end
+function checklattice(::Type{Bool}, O::LocalOperator, pepo::InfinitePEPO)
+    return checklattice(Bool, pepo, O)
 end
 @non_differentiable checklattice(args...)
 
@@ -90,11 +105,31 @@ function Base.repeat(O::LocalOperator, m::Int, n::Int)
     return LocalOperator(lattice, terms...)
 end
 
+"""
+    physicalspace(O::LocalOperator)
+
+Return lattice of physical spaces on which the `LocalOperator` is defined.
+"""
+function physicalspace(O::LocalOperator)
+    return O.lattice
+end
+
+Base.size(O::LocalOperator) = size(physicalspace(O))
+
+# Real and imaginary part
+# -----------------------
+function Base.real(O::LocalOperator)
+    return LocalOperator(O.lattice, (sites => real(op) for (sites, op) in O.terms)...)
+end
+function Base.imag(O::LocalOperator)
+    return LocalOperator(O.lattice, (sites => imag(op) for (sites, op) in O.terms)...)
+end
+
 # Linear Algebra
 # --------------
 function Base.:*(α::Number, O::LocalOperator)
     scaled_terms = map(((inds, operator),) -> (inds => α * operator), O.terms)
-    return LocalOperator{typeof(scaled_terms),eltype(O.lattice)}(O.lattice, scaled_terms)
+    return LocalOperator{typeof(scaled_terms), eltype(O.lattice)}(O.lattice, scaled_terms)
 end
 Base.:*(O::LocalOperator, α::Number) = α * O
 
@@ -109,115 +144,65 @@ end
 Base.:-(O::LocalOperator) = -1 * O
 Base.:-(O1::LocalOperator, O2::LocalOperator) = O1 + (-O2)
 
-# Rotation and mirroring
+# VectorInterface
+# ---------------
+
+function VI.scalartype(::Type{<:LocalOperator{T}}) where {T}
+    return promote_type((scalartype(last(fieldtypes(p))) for p in fieldtypes(T))...)
+end
+
+# Equivalence
+# -----------
+
+function Base.:(==)(O₁::LocalOperator, O₂::LocalOperator)
+    lat = O₁.lattice == O₂.lattice
+    terms = all(zip(O₁.terms, O₂.terms)) do (t₁, t₂)
+        return t₁ == t₂
+    end
+    return lat && terms
+end
+
+# Rotation
 # ----------------------
 
-"""
-    _mirror_antidiag_site(
-        site::S, (Nrow, Ncol)::NTuple{2,Int}
-    ) where {S<:Union{CartesianIndex{2},NTuple{2,Int}}}
-
-Get the position of `site` after reflection about the anti-diagonal line.
-"""
-function _mirror_antidiag_site(
-    site::S, (Nrow, Ncol)::NTuple{2,Int}
-) where {S<:Union{CartesianIndex{2},NTuple{2,Int}}}
-    r, c = site[1], site[2]
-    return CartesianIndex(1 - c + Ncol, 1 - r + Nrow)
+# rotation of a lattice site
+# (copy logic from Base.rotl90, Base.rotr90, Base.rot180)
+function siterotl90(site::CartesianIndex{2}, unitcell::NTuple{2, Int})
+    return CartesianIndex(unitcell[2] + 1 - site[2], site[1])
 end
-
-"""
-    _rotr90_site(
-        site::S, (Nrow, Ncol)::NTuple{2,Int}
-    ) where {S<:Union{CartesianIndex{2},NTuple{2,Int}}}
-
-Get the position of `site` after clockwise (right) rotation by 90 degrees.
-"""
-function _rotr90_site(
-    site::S, (Nrow, Ncol)::NTuple{2,Int}
-) where {S<:Union{CartesianIndex{2},NTuple{2,Int}}}
-    r, c = site[1], site[2]
-    return CartesianIndex(c, 1 + Nrow - r)
+function siterotr90(site::CartesianIndex{2}, unitcell::NTuple{2, Int})
+    return CartesianIndex(site[2], unitcell[1] + 1 - site[1])
 end
-
-"""
-    _rotl90_site(
-        site::S, (Nrow, Ncol)::NTuple{2,Int}
-    ) where {S<:Union{CartesianIndex{2},NTuple{2,Int}}}
-
-Get the position of `site` after counter-clockwise (left) rotation by 90 degrees.
-"""
-function _rotl90_site(
-    site::S, (Nrow, Ncol)::NTuple{2,Int}
-) where {S<:Union{CartesianIndex{2},NTuple{2,Int}}}
-    r, c = site[1], site[2]
-    return CartesianIndex(1 + Ncol - c, r)
-end
-
-"""
-    _rot180_site(
-        site::S, (Nrow, Ncol)::NTuple{2,Int}
-    ) where {S<:Union{CartesianIndex{2},NTuple{2,Int}}}
-
-Get the position of `site` after rotation by 180 degrees.
-"""
-function _rot180_site(
-    site::S, (Nrow, Ncol)::NTuple{2,Int}
-) where {S<:Union{CartesianIndex{2},NTuple{2,Int}}}
-    r, c = site[1], site[2]
-    return CartesianIndex(1 + Nrow - r, 1 + Ncol - c)
-end
-
-"""
-    mirror_antidiag(H::LocalOperator)
-
-Mirror a `LocalOperator` across the anti-diagonal axis of its lattice.
-"""
-function mirror_antidiag(H::LocalOperator)
-    lattice2 = mirror_antidiag(H.lattice)
-    terms2 = (
-        (Tuple(_mirror_antidiag_site(site, size(H.lattice)) for site in sites) => op) for
-        (sites, op) in H.terms
-    )
-    return LocalOperator(lattice2, terms2...)
+function siterot180(site::CartesianIndex{2}, unitcell::NTuple{2, Int})
+    return CartesianIndex(unitcell[1] + 1 - site[1], unitcell[2] + 1 - site[2])
 end
 
 function Base.rotr90(H::LocalOperator)
+    Hsize = size(H.lattice)
     lattice2 = rotr90(H.lattice)
-    terms2 = (
-        (Tuple(_rotr90_site(site, size(H.lattice)) for site in sites) => op) for
-        (sites, op) in H.terms
-    )
+    terms2 = ((Tuple(siterotr90(site, Hsize) for site in sites) => op) for (sites, op) in H.terms)
     return LocalOperator(lattice2, terms2...)
 end
-
 function Base.rotl90(H::LocalOperator)
+    Hsize = size(H.lattice)
     lattice2 = rotl90(H.lattice)
-    terms2 = (
-        (Tuple(_rotl90_site(site, size(H.lattice)) for site in sites) => op) for
-        (sites, op) in H.terms
-    )
+    terms2 = ((Tuple(siterotl90(site, Hsize) for site in sites) => op) for (sites, op) in H.terms)
     return LocalOperator(lattice2, terms2...)
 end
-
 function Base.rot180(H::LocalOperator)
+    Hsize = size(H.lattice)
     lattice2 = rot180(H.lattice)
-    terms2 = (
-        (Tuple(_rot180_site(site, size(H.lattice)) for site in sites) => op) for
-        (sites, op) in H.terms
-    )
+    terms2 = ((Tuple(siterot180(site, Hsize) for site in sites) => op) for (sites, op) in H.terms)
     return LocalOperator(lattice2, terms2...)
 end
 
 # Charge shifting
 # ---------------
-
-TensorKit.sectortype(O::LocalOperator) = sectortype(typeof(O))
-TensorKit.sectortype(::Type{<:LocalOperator{T,S}}) where {T,S} = sectortype(S)
+TensorKit.spacetype(::Type{T}) where {S, T <: LocalOperator{<:Any, S}} = S
 
 @generated function _fuse_isomorphisms(
-    op::AbstractTensorMap{<:Any,S,N,N}, fs::Vector{<:AbstractTensorMap{<:Any,S,1,2}}
-) where {S,N}
+        op::AbstractTensorMap{<:Any, S, N, N}, fs::Vector{<:AbstractTensorMap{<:Any, S, 1, 2}}
+    ) where {S, N}
     op_out_e = tensorexpr(:op_out, -(1:N), -((1:N) .+ N))
     op_e = tensorexpr(:op, 1:3:(3 * N), 2:3:(3 * N))
     f_es = map(1:N) do i
@@ -226,18 +211,21 @@ TensorKit.sectortype(::Type{<:LocalOperator{T,S}}) where {T,S} = sectortype(S)
     end
     f_dag_es = map(1:N) do i
         j = 3 * (i - 1) + 1
-        return tensorexpr(:(fs[$i]), -(N + i), (j + 1, j + 2))
+        return tensorexpr(:(twistdual(fs[$i]', 1:2)), (j + 1, j + 2), -(N + i))
     end
     multiplication_ex = Expr(
-        :call, :*, op_e, f_es..., map(x -> Expr(:call, :conj, x), f_dag_es)...
+        :call, :*, op_e, f_es..., f_dag_es...
     )
     return macroexpand(@__MODULE__, :(return @tensor $op_out_e := $multiplication_ex))
 end
 
 """
-Fuse identities on auxiliary physical spaces into a given operator.
+    _fuse_ids(op::AbstractTensorMap{T, S, N, N}, [Ps::NTuple{N, S}]) where {T, S, N}
+
+Fuse identities on auxiliary physical spaces `Ps` into a given operator `op`.
+When `Ps` is not specified, it defaults to the domain spaces of `op`.
 """
-function _fuse_ids(op::AbstractTensorMap{T,S,N,N}, Ps::NTuple{N,S}) where {T,S,N}
+function _fuse_ids(op::AbstractTensorMap{T, S, N, N}, Ps::NTuple{N, S}) where {T, S, N}
     # make isomorphisms
     fs = map(1:N) do i
         return isomorphism(fuse(space(op, i), Ps[i]), space(op, i) ⊗ Ps[i])
@@ -245,24 +233,29 @@ function _fuse_ids(op::AbstractTensorMap{T,S,N,N}, Ps::NTuple{N,S}) where {T,S,N
     # and fuse them into the operator
     return _fuse_isomorphisms(op, fs)
 end
+function _fuse_ids(op::AbstractTensorMap{T, S, N, N}) where {T, S, N}
+    return _fuse_ids(op, Tuple(domain(op)))
+end
 
 """
-    MPSKit.add_physical_charge(H::LocalOperator, charges::AbstractMatrix{<:Sector}) where {S}
+    add_physical_charge(H::LocalOperator, charges::AbstractMatrix{<:Sector})
 
-Change the spaces of a `LocalOperator` by fusing in an auxiliary charge on every site,
-according to a given matrix of 'auxiliary' physical charges.
+Change the spaces of a `LocalOperator` by fusing in an auxiliary charge into the domain of
+the operator on every site, according to a given matrix of 'auxiliary' physical charges.
 """
 function MPSKit.add_physical_charge(H::LocalOperator, charges::AbstractMatrix{<:Sector})
-    size(H.lattice) == size(charges) ||
+    size(physicalspace(H)) == size(charges) ||
         throw(ArgumentError("Incompatible lattice and auxiliary charge sizes"))
     sectortype(H) === eltype(charges) ||
         throw(SectorMismatch("Incompatible lattice and auxiliary charge sizes"))
 
-    # make indexing periodic, for convenience
-    Paux = PeriodicArray(map(c -> Vect[typeof(c)](c => 1), charges))
+    # auxiliary spaces will be fused into codomain, so need to dualize the space to fuse
+    # the charge into the domain as desired
+    # also, make indexing periodic for convenience
+    Paux = PeriodicArray(map(c -> Vect[typeof(c)](c => 1)', charges))
 
     # new physical spaces
-    Pspaces = map(fuse, H.lattice, Paux)
+    Pspaces = map(fuse, physicalspace(H), Paux)
 
     new_terms = map(H.terms) do (sites, op)
         Paux_slice = map(Base.Fix1(getindex, Paux), sites)

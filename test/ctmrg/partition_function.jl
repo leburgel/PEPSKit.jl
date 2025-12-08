@@ -4,6 +4,21 @@ using LinearAlgebra
 using PEPSKit
 using TensorKit
 using QuadGK
+using Test
+
+@testset "Check spaces in partition function CTMRG" begin
+    zA = randn(ℂ^6 ⊗ ℂ^8 ← ℂ^4 ⊗ ℂ^2)
+    zB = randn(ℂ^2 ⊗ ℂ^9 ← ℂ^5 ⊗ ℂ^6)
+    zC = randn(ℂ^7 ⊗ ℂ^4 ← ℂ^8 ⊗ ℂ^3)
+    zD = randn(ℂ^3 ⊗ ℂ^5 ← ℂ^9 ⊗ ℂ^7)
+
+    Z = InfinitePartitionFunction([zA zB; zC zD])
+    χenv = ℂ^12
+    env0 = CTMRGEnv(Z, χenv)
+    env, = leading_boundary(env0, Z; alg = :simultaneous, maxiter = 3, projector_alg = :fullinfinite)
+    @test env isa CTMRGEnv
+end
+
 
 ## Setup
 
@@ -17,7 +32,7 @@ for the 2D classical Ising Model with partition function
 \\mathcal{Z}(\\beta) = \\sum_{\\{s\\}} \\exp(-\\beta H(s)) \\text{ with } H(s) = -J \\sum_{\\langle i, j \\rangle} s_i s_j
 ```
 """
-function classical_ising_exact(; beta=log(1 + sqrt(2)) / 2, J=1.0)
+function classical_ising_exact(; beta = log(1 + sqrt(2)) / 2, J = 1.0)
     K = beta * J
 
     k = 1 / sinh(2 * K)^2
@@ -43,7 +58,7 @@ Implements the 2D classical Ising model with partition function
 \\mathcal{Z}(\\beta) = \\sum_{\\{s\\}} \\exp(-\\beta H(s)) \\text{ with } H(s) = -J \\sum_{\\langle i, j \\rangle} s_i s_j
 ```
 """
-function classical_ising(; beta=log(1 + sqrt(2)) / 2, J=1.0)
+function classical_ising(; beta = log(1 + sqrt(2)) / 2, J = 1.0)
     K = beta * J
 
     # Boltzmann weights
@@ -92,12 +107,25 @@ env0 = CTMRGEnv(Z, χenv)
 ctm_styles = [:sequential, :simultaneous]
 projector_algs = [:halfinfinite, :fullinfinite]
 
+# Basic properties
+@test spacetype(typeof(Z)) === ComplexSpace
+@test spacetype(Z) === ComplexSpace
+@test sectortype(typeof(Z)) === Trivial
+@test sectortype(Z) === Trivial
+@test length(Z) == 1
+@test size(Z, 1) == 1
+@test size(Z, 2) == 1
+@test eltype(similar(Z)) == eltype(Z)
+@test copy(Z) == Z
+@test copy(Z) ≈ Z
+
+
 @testset "Classical Ising partition function using $alg with $projector_alg" for (
-    alg, projector_alg
-) in Iterators.product(
-    ctm_styles, projector_algs
-)
-    env, = leading_boundary(env0, Z; alg, maxiter=150, projector_alg)
+        alg, projector_alg,
+    ) in Iterators.product(
+        ctm_styles, projector_algs
+    )
+    env, = leading_boundary(env0, Z; alg, maxiter = 150, projector_alg)
 
     # check observables
     λ = network_value(Z, env)
@@ -106,12 +134,12 @@ projector_algs = [:halfinfinite, :fullinfinite]
     f_exact, m_exact, e_exact = classical_ising_exact(; beta)
 
     # should be real-ish
-    @test abs(imag(λ)) < 1e-4
-    @test abs(imag(m)) < 1e-4
-    @test abs(imag(e)) < 1e-4
+    @test abs(imag(λ)) < 1.0e-4
+    @test abs(imag(m)) < 1.0e-4
+    @test abs(imag(e)) < 1.0e-4
 
     # should match exact solution
-    @test -log(λ) / beta ≈ f_exact rtol = 1e-4
-    @test abs(m) ≈ abs(m_exact) rtol = 1e-4
-    @test e ≈ e_exact rtol = 1e-1 # accuracy limited by bond dimension and maxiter
+    @test -log(λ) / beta ≈ f_exact rtol = 1.0e-4
+    @test abs(m) ≈ abs(m_exact) rtol = 1.0e-4
+    @test e ≈ e_exact rtol = 1.0e-1 # accuracy limited by bond dimension and maxiter
 end

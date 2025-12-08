@@ -3,23 +3,25 @@
 # --------------------------------------------------------
 
 """
-    struct EnlargedCorner{TC,TE,TA}
+$(TYPEDEF)
 
 Enlarged CTMRG corner tensor storage.
-"""
-struct EnlargedCorner{TC,TE,TA}
-    C::TC
-    E_1::TE
-    E_2::TE
-    A::TA
-end
 
-"""
+## Constructors
+
     EnlargedCorner(network::InfiniteSquareNetwork, env, coordinates)
 
 Construct an enlarged corner with the correct row and column indices based on the given
 `coordinates` which are of the form `(dir, row, col)`.
+
 """
+struct EnlargedCorner{TC, TE, TA}
+    C::TC
+    E_1::TE
+    E_2::TE
+    A::TA
+    dir::Int
+end
 function EnlargedCorner(network::InfiniteSquareNetwork, env, coordinates)
     dir, r, c = coordinates
     if dir == NORTHWEST
@@ -28,6 +30,7 @@ function EnlargedCorner(network::InfiniteSquareNetwork, env, coordinates)
             env.edges[WEST, r, _prev(c, end)],
             env.edges[NORTH, _prev(r, end), c],
             network[r, c],
+            dir,
         )
     elseif dir == NORTHEAST
         return EnlargedCorner(
@@ -35,6 +38,7 @@ function EnlargedCorner(network::InfiniteSquareNetwork, env, coordinates)
             env.edges[NORTH, _prev(r, end), c],
             env.edges[EAST, r, _next(c, end)],
             network[r, c],
+            dir,
         )
     elseif dir == SOUTHEAST
         return EnlargedCorner(
@@ -42,6 +46,7 @@ function EnlargedCorner(network::InfiniteSquareNetwork, env, coordinates)
             env.edges[EAST, r, _next(c, end)],
             env.edges[SOUTH, _next(r, end), c],
             network[r, c],
+            dir,
         )
     elseif dir == SOUTHWEST
         return EnlargedCorner(
@@ -49,25 +54,29 @@ function EnlargedCorner(network::InfiniteSquareNetwork, env, coordinates)
             env.edges[SOUTH, _next(r, end), c],
             env.edges[WEST, r, _prev(c, end)],
             network[r, c],
+            dir,
         )
+    else
+        throw(ArgumentError(lazy"Invalid direction $dir"))
     end
 end
 
 """
-    TensorKit.TensorMap(Q::EnlargedCorner, dir::Int)
+    TensorMap(Q::EnlargedCorner)
 
-Instantiate enlarged corner as `TensorMap` where `dir` selects the correct contraction
-direction, i.e. the way the environment and PEPS tensors connect.
+Instantiate enlarged corner as a `TensorMap`.
 """
-function TensorKit.TensorMap(Q::EnlargedCorner, dir::Int)
-    if dir == NORTHWEST
+function TensorKit.TensorMap(Q::EnlargedCorner)
+    if Q.dir == NORTHWEST
         return enlarge_northwest_corner(Q.E_1, Q.C, Q.E_2, Q.A)
-    elseif dir == NORTHEAST
+    elseif Q.dir == NORTHEAST
         return enlarge_northeast_corner(Q.E_1, Q.C, Q.E_2, Q.A)
-    elseif dir == SOUTHEAST
+    elseif Q.dir == SOUTHEAST
         return enlarge_southeast_corner(Q.E_1, Q.C, Q.E_2, Q.A)
-    elseif dir == SOUTHWEST
+    elseif Q.dir == SOUTHWEST
         return enlarge_southwest_corner(Q.E_1, Q.C, Q.E_2, Q.A)
+    else
+        throw(ArgumentError(lazy"Invalid direction $dir"))
     end
 end
 
@@ -89,13 +98,11 @@ function half_infinite_environment(ec_1::EnlargedCorner, ec_2::EnlargedCorner)
     return HalfInfiniteEnv(ec_1, ec_2)
 end
 
-# Compute left and right projectors sparsely without constructing enlarged corners explicitly 
+# Compute left and right projectors sparsely without constructing enlarged corners explicitly
 function left_and_right_projector(U, S, V, Q::EnlargedCorner, Q_next::EnlargedCorner)
     isqS = sdiag_pow(S, -0.5)
-    P_left = left_projector(Q.E_1, Q.C, Q.E_2, V, isqS, Q.ket, Q.bra)
-    P_right = right_projector(
-        Q_next.E_1, Q_next.C, Q_next.E_2, U, isqS, Q_next.ket, Q_next.bra
-    )
+    P_left = left_projector(Q.E_1, Q.C, Q.E_2, V, isqS, Q.A)
+    P_right = right_projector(Q_next.E_1, Q_next.C, Q_next.E_2, U, isqS, Q_next.A)
     return P_left, P_right
 end
 
@@ -104,11 +111,21 @@ end
 # --------------------------------
 
 """
-    struct HalfInfiniteEnv{C,E,A,A′}
+$(TYPEDEF)
 
 Half-infinite CTMRG environment tensor storage.
+
+## Fields
+
+$(FIELDS)
+
+## Constructors
+
+    HalfInfiniteEnv(quadrant1::EnlargedCorner, quadrant2::EnlargedCorner)
+
+Construct sparse half-infinite environment based on two sparse enlarged corners (quadrants).
 """
-struct HalfInfiniteEnv{TC,TE,TA}  # TODO: subtype as AbstractTensorMap once TensorKit is updated
+struct HalfInfiniteEnv{TC, TE, TA}  # TODO: subtype as AbstractTensorMap once TensorKit is updated
     C_1::TC
     C_2::TC
     E_1::TE
@@ -118,23 +135,16 @@ struct HalfInfiniteEnv{TC,TE,TA}  # TODO: subtype as AbstractTensorMap once Tens
     A_1::TA
     A_2::TA
 end
-
-# Construct environment from two enlarged corners
 function HalfInfiniteEnv(quadrant1::EnlargedCorner, quadrant2::EnlargedCorner)
     return HalfInfiniteEnv(
-        quadrant1.C,
-        quadrant2.C,
-        quadrant1.E_1,
-        quadrant1.E_2,
-        quadrant2.E_1,
-        quadrant2.E_2,
-        quadrant1.A_1,
-        quadrant2.A_2,
+        quadrant1.C, quadrant2.C,
+        quadrant1.E_1, quadrant1.E_2, quadrant2.E_1, quadrant2.E_2,
+        quadrant1.A_1, quadrant2.A_2,
     )
 end
 
 """
-    TensorKit.TensorMap(env::HalfInfiniteEnv)
+    TensorMap(env::HalfInfiniteEnv)
 
 Instantiate half-infinite environment as `TensorMap` explicitly.
 """
@@ -183,11 +193,22 @@ end
 # --------------------------------
 
 """
-    struct FullInfiniteEnv{TC,TE,TA}
+$(TYPEDEF)
 
 Full-infinite CTMRG environment tensor storage.
+
+## Fields
+
+$(FIELDS)
+
+## Constructors
+    FullInfiniteEnv(
+        quadrant1::E, quadrant2::E, quadrant3::E, quadrant4::E
+    ) where {E<:EnlargedCorner}
+    
+Construct sparse full-infinite environment based on four sparse enlarged corners (quadrants).
 """
-struct FullInfiniteEnv{TC,TE,TA}  # TODO: subtype as AbstractTensorMap once TensorKit is updated
+struct FullInfiniteEnv{TC, TE, TA}  # TODO: subtype as AbstractTensorMap once TensorKit is updated
     C_1::TC
     C_2::TC
     C_3::TC
@@ -205,54 +226,27 @@ struct FullInfiniteEnv{TC,TE,TA}  # TODO: subtype as AbstractTensorMap once Tens
     A_3::TA
     A_4::TA
 end
-
-# Construct environment from two enlarged corners
 function FullInfiniteEnv(
-    quadrant1::E, quadrant2::E, quadrant3::E, quadrant4::E
-) where {E<:EnlargedCorner}
+        quadrant1::E, quadrant2::E, quadrant3::E, quadrant4::E
+    ) where {E <: EnlargedCorner}
     return FullInfiniteEnv(
-        quadrant1.C,
-        quadrant2.C,
-        quadrant3.C,
-        quadrant4.C,
-        quadrant1.E_1,
-        quadrant1.E_2,
-        quadrant2.E_1,
-        quadrant2.E_2,
-        quadrant3.E_1,
-        quadrant3.E_2,
-        quadrant4.E_1,
-        quadrant4.E_2,
-        quadrant1.A,
-        quadrant2.A,
-        quadrant3.A,
-        quadrant4.A,
+        quadrant1.C, quadrant2.C, quadrant3.C, quadrant4.C,
+        quadrant1.E_1, quadrant1.E_2, quadrant2.E_1, quadrant2.E_2,
+        quadrant3.E_1, quadrant3.E_2, quadrant4.E_1, quadrant4.E_2,
+        quadrant1.A, quadrant2.A, quadrant3.A, quadrant4.A,
     )
 end
 
 """
-    TensorKit.TensorMap(env::FullInfiniteEnv)
+    TensorMap(env::FullInfiniteEnv)
 
 Instantiate full-infinite environment as `TensorMap` explicitly.
 """
 function TensorKit.TensorMap(env::FullInfiniteEnv)  # Dense operator
     return full_infinite_environment(
-        env.C_1,
-        env.C_2,
-        env.C_3,
-        env.C_4,
-        env.E_1,
-        env.E_2,
-        env.E_3,
-        env.E_4,
-        env.E_2,
-        env.E_3,
-        env.E_4,
-        env.E_5,
-        env.A_1,
-        env.A_2,
-        env.A_3,
-        env.A_4,
+        env.C_1, env.C_2, env.C_3, env.C_4,
+        env.E_1, env.E_2, env.E_3, env.E_4, env.E_2, env.E_3, env.E_4, env.E_5,
+        env.A_1, env.A_2, env.A_3, env.A_4,
     )
 end
 
@@ -265,51 +259,25 @@ linear map or adjoint linear map on `x` if `Val(true)` or `Val(false)` is passed
 """
 function (env::FullInfiniteEnv)(x, ::Val{false})  # Linear map: env() * x
     return full_infinite_environment(
-        env.C_1,
-        env.C_2,
-        env.C_3,
-        env.C_4,
-        env.E_1,
-        env.E_2,
-        env.E_3,
-        env.E_4,
-        env.E_5,
-        env.E_6,
-        env.E_7,
-        env.E_8,
+        env.C_1, env.C_2, env.C_3, env.C_4,
+        env.E_1, env.E_2, env.E_3, env.E_4, env.E_5, env.E_6, env.E_7, env.E_8,
         x,
-        env.A_1,
-        env.A_2,
-        env.A_3,
-        env.A_4,
+        env.A_1, env.A_2, env.A_3, env.A_4,
     )
 end
 function (env::FullInfiniteEnv)(x, ::Val{true})  # Adjoint linear map: env()' * x
     return full_infinite_environment(
         x,
-        env.C_1,
-        env.C_2,
-        env.C_3,
-        env.C_4,
-        env.E_1,
-        env.E_2,
-        env.E_3,
-        env.E_4,
-        env.E_5,
-        env.E_6,
-        env.E_7,
-        env.E_8,
-        env.A_1,
-        env.A_2,
-        env.A_3,
-        env.A_4,
+        env.C_1, env.C_2, env.C_3, env.C_4,
+        env.E_1, env.E_2, env.E_3, env.E_4, env.E_5, env.E_6, env.E_7, env.E_8,
+        env.A_1, env.A_2, env.A_3, env.A_4,
     )
 end
 
 # Wrapper around full_infinite_environment contraction using EnlargedCorners (used in ctmrg_projectors)
 function full_infinite_environment(
-    ec_1::E, ec_2::E, ec_3::E, ec_4::E
-) where {E<:EnlargedCorner}
+        ec_1::E, ec_2::E, ec_3::E, ec_4::E
+    ) where {E <: EnlargedCorner}
     return FullInfiniteEnv(ec_1, ec_2, ec_3, ec_4)
 end
 

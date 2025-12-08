@@ -2,30 +2,28 @@ using Test
 using Random
 using LinearAlgebra
 using TensorKit
-using KrylovKit
 using ChainRulesCore, Zygote
 using Accessors
 using PEPSKit
 # using PEPSKit: HalfInfiniteEnv
 
 # Gauge-invariant loss function
-function lossfun(A, alg, R=randn(space(A)), trunc=notrunc())
-    U, _, V, = PEPSKit.tsvd(A, alg; trunc)
-    return real(dot(R, U * V))  # Overlap with random tensor R is gauge-invariant and differentiable, also for m≠n
+function lossfun(A, alg, R = randn(space(A)), trunc = notrunc())
+    U, S, V, = svd_trunc(A, alg; trunc)
+    return real(dot(R, U * V)) + dot(S, S)  # Overlap with random tensor R is gauge-invariant and differentiable, also for m≠n
 end
 
 m, n = 20, 30
 dtype = ComplexF64
 χ = 12
 trunc = truncspace(ℂ^χ)
-# lorentz_broadening = 1e-12
-rtol = 1e-9
+rtol = 1.0e-9
 Random.seed!(123456789)
 r = randn(dtype, ℂ^m, ℂ^n)
 R = randn(space(r))
 
-full_alg = SVDAdjoint(; rrule_alg=(; alg=:tsvd))
-iter_alg = SVDAdjoint(; fwd_alg=(; alg=:iterative))
+full_alg = SVDAdjoint(; rrule_alg = (; alg = :full, broadening = 0))
+iter_alg = SVDAdjoint(; fwd_alg = (; alg = :iterative))
 
 @testset "Non-truncacted SVD" begin
     l_fullsvd, g_fullsvd = withgradient(A -> lossfun(A, full_alg, R), r)
@@ -43,20 +41,30 @@ end
     @test g_fullsvd[1] ≈ g_itersvd[1] rtol = rtol
 end
 
-# TODO: Add when Lorentzian broadening is implemented
-# @testset "Truncated SVD with χ=$χ and ε=$lorentz_broadening broadening" begin
-#     l_fullsvd, g_fullsvd = withgradient(
-#         A -> lossfun(A, FullSVD(; lorentz_broadening, R; trunc), r
-#     )
-#     l_oldsvd, g_oldsvd = withgradient(A -> lossfun(A, OldSVD(; lorentz_broadening), R; trunc), r)
-#     l_itersvd, g_itersvd = withgradient(
-#         A -> lossfun(A, IterSVD(; howmany=χ, lorentz_broadening), R; trunc), r
-#     )
+@testset "Truncated SVD broadening" begin
+    u, s, v, = svd_compact(r)
+    s.data[1:2:m] .= s.data[2:2:m] # make every singular value two-fold degenerate
+    r_degen = u * s * v
 
-#     @test l_oldsvd ≈ l_itersvd ≈ l_fullsvd 
-#     @test norm(g_fullsvd[1] - g_oldsvd[1]) / norm(g_fullsvd[1]) > rtol
-#     @test norm(g_fullsvd[1] - g_itersvd[1]) / norm(g_fullsvd[1]) < rtol
-# end
+    no_broadening_no_cutoff_alg = @set full_alg.rrule_alg.broadening = 1.0e-30
+    small_broadening_alg = @set full_alg.rrule_alg.broadening = 1.0e-13
+
+    l_only_cutoff, g_only_cutoff = withgradient(
+        A -> lossfun(A, full_alg, R, trunc), r_degen
+    ) # cutoff sets degenerate difference to zero
+    l_no_broadening_no_cutoff, g_no_broadening_no_cutoff = withgradient( # degenerate singular value differences lead to divergent contributions
+        A -> lossfun(A, no_broadening_no_cutoff_alg, R, trunc),
+        r_degen,
+    )
+    l_small_broadening, g_small_broadening = withgradient( # Lorentzian broadening smoothens divergent contributions
+        A -> lossfun(A, small_broadening_alg, R, trunc),
+        r_degen,
+    )
+
+    @test l_only_cutoff ≈ l_no_broadening_no_cutoff ≈ l_small_broadening
+    @test norm(g_no_broadening_no_cutoff[1] - g_small_broadening[1]) > 1.0e-2 # divergences mess up the gradient
+    @test g_only_cutoff[1] ≈ g_small_broadening[1] rtol = rtol # cutoff and Lorentzian broadening have similar effect
+end
 
 symm_m, symm_n = 18, 24
 symm_space = Z2Space(0 => symm_m, 1 => symm_n)
@@ -87,13 +95,38 @@ symm_R = randn(dtype, space(symm_r))
     @test g_fullsvd_tr[1] ≈ g_itersvd_fb[1] rtol = rtol
 end
 
+@testset "Truncated symmetric SVD broadening" begin
+    u, s, v, = svd_compact(symm_r)
+    s.data[1:2:m] .= s.data[2:2:m] # make every singular value two-fold degenerate
+    symm_r_degen = u * s * v
+
+    no_broadening_no_cutoff_alg = @set full_alg.rrule_alg.broadening = 1.0e-30
+    small_broadening_alg = @set full_alg.rrule_alg.broadening = 1.0e-13
+
+    l_only_cutoff, g_only_cutoff = withgradient(
+        A -> lossfun(A, full_alg, symm_R, symm_trspace), symm_r_degen
+    ) # cutoff sets degenerate difference to zero
+    l_no_broadening_no_cutoff, g_no_broadening_no_cutoff = withgradient( # degenerate singular value differences lead to divergent contributions
+        A -> lossfun(A, no_broadening_no_cutoff_alg, symm_R, symm_trspace),
+        symm_r_degen,
+    )
+    l_small_broadening, g_small_broadening = withgradient( # Lorentzian broadening smoothens divergent contributions
+        A -> lossfun(A, small_broadening_alg, symm_R, symm_trspace),
+        symm_r_degen,
+    )
+
+    @test l_only_cutoff ≈ l_no_broadening_no_cutoff ≈ l_small_broadening
+    @test norm(g_no_broadening_no_cutoff[1] - g_small_broadening[1]) > 1.0e-2 # divergences mess up the gradient
+    @test g_only_cutoff[1] ≈ g_small_broadening[1] rtol = rtol # cutoff and Lorentzian broadening have similar effect
+end
+
 # TODO: Add when IterSVD is implemented for HalfInfiniteEnv
 # χbond = 2
 # χenv = 6
 # ctm_alg = CTMRG(; tol=1e-10, verbosity=2, svd_alg=SVDAdjoint())
 # Random.seed!(91283219347)
 # H = heisenberg_XYZ(InfiniteSquare())
-# psi = InfinitePEPS(2, χbond)
+# psi = InfinitePEPS(ComplexSpace(2), ComplexSpace(χbond))
 # env = leading_boundary(CTMRGEnv(psi, ComplexSpace(χenv)), psi, ctm_alg);
 # hienv = HalfInfiniteEnv(
 #     env.corners[1],
@@ -110,7 +143,7 @@ end
 # hienv_dense = hienv()
 # env_R = randn(space(hienv))
 
-# PEPSKit.tsvd!(hienv, iter_alg)
+# svd_trunc!(hienv, iter_alg)
 
 # @testset "IterSVD with HalfInfiniteEnv function handle" begin
 #     # Equivalence of dense and sparse contractions

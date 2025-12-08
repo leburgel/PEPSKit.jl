@@ -1,12 +1,12 @@
 """
-    gauge_fix(envprev::CTMRGEnv{C,T}, envfinal::CTMRGEnv{C,T}) where {C,T}
+$(SIGNATURES)
 
 Fix the gauge of `envfinal` based on the previous environment `envprev`.
 This assumes that the `envfinal` is the result of one CTMRG iteration on `envprev`.
 Given that the CTMRG run is converged, the returned environment will be
 element-wise converged to `envprev`.
 """
-function gauge_fix(envprev::CTMRGEnv{C,T}, envfinal::CTMRGEnv{C,T}) where {C,T}
+function gauge_fix(envprev::CTMRGEnv{C, T}, envfinal::CTMRGEnv{C, T}) where {C, T}
     # Check if spaces in envprev and envfinal are the same
     same_spaces = map(eachcoordinate(envfinal, 1:4)) do (dir, r, c)
         space(envfinal.edges[dir, r, c]) == space(envprev.edges[dir, r, c]) &&
@@ -38,14 +38,14 @@ function gauge_fix(envprev::CTMRGEnv{C,T}, envfinal::CTMRGEnv{C,T}) where {C,T}
 
         # Find right fixed points of mixed transfer matrices
         ρinit = randn(
-            scalartype(T), MPSKit._lastspace(Tsfinal[end])' ← MPSKit._lastspace(M[end])'
+            scalartype(T), space(Tsfinal[end], numind(Tsfinal[end]))' ← space(M[end], numind(M[end]))'
         )
         ρprev = transfermatrix_fixedpoint(Tsprev, M, ρinit)
         ρfinal = transfermatrix_fixedpoint(Tsfinal, M, ρinit)
 
         # Decompose and multiply
-        Qprev, = leftorth!(ρprev)
-        Qfinal, = leftorth!(ρfinal)
+        Qprev, = left_orth!(ρprev)
+        Qfinal, = left_orth!(ρfinal)
 
         return Qprev * Qfinal'
     end
@@ -56,11 +56,13 @@ end
 
 # this is a bit of a hack to get the fixed point of the mixed transfer matrix
 # because MPSKit is not compatible with AD
-@generated function _transfer_right(
-    v::AbstractTensorMap{<:Any,S,1,N₁},
-    A::GenericMPSTensor{S,N₂},
-    Abar::GenericMPSTensor{S,N₂},
-) where {S,N₁,N₂}
+# NOTE: the action of the transfer operator here is NOT the same as that of
+# MPSKit.transfer_right; to match the MPSKit implementation, it would require a twist on any
+# index where spaces(Abar, 2:end) is dual (which we can just ignore as long as we use a random Abar)
+@generated function mps_transfer_right(
+        v::AbstractTensorMap{<:Any, S, 1, N₁},
+        A::GenericMPSTensor{S, N₂}, Abar::GenericMPSTensor{S, N₂},
+    ) where {S, N₁, N₂}
     t_out = tensorexpr(:v, -1, -(2:(N₁ + 1)))
     t_top = tensorexpr(:A, (-1, reverse(3:(N₂ + 1))...), 1)
     t_bot = tensorexpr(:Abar, (-(N₁ + 1), reverse(3:(N₂ + 1))...), 2)
@@ -71,11 +73,13 @@ end
 end
 function transfermatrix_fixedpoint(tops, bottoms, ρinit)
     _, vecs, info = eigsolve(ρinit, 1, :LM, Arnoldi()) do ρ
-        return foldr(zip(tops, bottoms); init=ρ) do (top, bottom), ρ
-            return _transfer_right(ρ, top, bottom)
+        return foldr(zip(tops, bottoms); init = ρ) do (top, bottom), ρ
+            return mps_transfer_right(ρ, top, bottom)
         end
     end
-    info.converged > 0 || @warn "eigsolve did not converge"
+    ignore_derivatives() do
+        info.converged > 0 || @warn "eigsolve did not converge"
+    end
     return first(vecs)
 end
 
@@ -108,8 +112,8 @@ function fix_relative_phases(envfinal::CTMRGEnv, signs)
     return corners_fixed, edges_fixed
 end
 function fix_relative_phases(
-    U::Array{Ut,3}, V::Array{Vt,3}, signs
-) where {Ut<:AbstractTensorMap,Vt<:AbstractTensorMap}
+        U::Array{Ut, 3}, V::Array{Vt, 3}, signs
+    ) where {Ut <: AbstractTensorMap, Vt <: AbstractTensorMap}
     U_fixed = map(CartesianIndices(U)) do I
         dir, r, c = I.I
         if dir == NORTHWEST
@@ -139,7 +143,13 @@ function fix_relative_phases(
     return U_fixed, V_fixed
 end
 
-# Fix global phases of corners and edges via dot product (to ensure compatibility with symm. tensors)
+"""
+$(SIGNATURES)
+
+Fix global multiplicative phase of the environment tensors. To that end, the dot products
+between all corners and all edges are computed to obtain the global phase which is then
+divided out.
+"""
 function fix_global_phases(envprev::CTMRGEnv, envfix::CTMRGEnv)
     cornersgfix = map(zip(envprev.corners, envfix.corners)) do (Cprev, Cfix)
         φ = dot(Cprev, Cfix)
@@ -156,9 +166,9 @@ end
     calc_elementwise_convergence(envfinal, envfix; atol=1e-6)
 
 Check if the element-wise difference of the corner and edge tensors of the final and fixed
-CTMRG environments are below some tolerance.
+CTMRG environments are below `atol` and return the maximal difference.
 """
-function calc_elementwise_convergence(envfinal::CTMRGEnv, envfix::CTMRGEnv; atol::Real=1e-6)
+function calc_elementwise_convergence(envfinal::CTMRGEnv, envfix::CTMRGEnv; atol::Real = 1.0e-6)
     ΔC = envfinal.corners .- envfix.corners
     ΔCmax = norm(ΔC, Inf)
     ΔCmean = norm(ΔC)

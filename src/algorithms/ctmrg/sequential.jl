@@ -1,32 +1,38 @@
 """
     struct SequentialCTMRG <: CTMRGAlgorithm
-    SequentialCTMRG(; kwargs...)
 
 CTMRG algorithm where the expansions and renormalization is performed sequentially
 column-wise. This is implemented as a growing and projecting step to the left, followed by
 a clockwise rotation (performed four times).
 
-## Keyword arguments
+## Fields
 
+$(TYPEDFIELDS)
+
+## Constructors
+
+    SequentialCTMRG(; kwargs...)
+
+Construct a sequential CTMRG algorithm struct based on keyword arguments.
 For a full description, see [`leading_boundary`](@ref). The supported keywords are:
 
 * `tol::Real=$(Defaults.ctmrg_tol)`
 * `maxiter::Int=$(Defaults.ctmrg_maxiter)`
 * `miniter::Int=$(Defaults.ctmrg_miniter)`
 * `verbosity::Int=$(Defaults.ctmrg_verbosity)`
-* `trscheme::Union{TruncationScheme,NamedTuple}=(; alg::Symbol=:$(Defaults.trscheme))`
+* `trunc::Union{TruncationStrategy,NamedTuple}=(; alg::Symbol=:$(Defaults.trunc))`
 * `svd_alg::Union{<:SVDAdjoint,NamedTuple}`
 * `projector_alg::Symbol=:$(Defaults.projector_alg)`
 """
-struct SequentialCTMRG <: CTMRGAlgorithm
+struct SequentialCTMRG{P <: ProjectorAlgorithm} <: CTMRGAlgorithm
     tol::Float64
     maxiter::Int
     miniter::Int
     verbosity::Int
-    projector_alg::ProjectorAlgorithm
+    projector_alg::P
 end
 function SequentialCTMRG(; kwargs...)
-    return CTMRGAlgorithm(; alg=:sequential, kwargs...)
+    return CTMRGAlgorithm(; alg = :sequential, kwargs...)
 end
 
 CTMRG_SYMBOLS[:sequential] = SequentialCTMRG
@@ -75,36 +81,40 @@ for a specific `coordinate` (where `dir=WEST` is already implied in the `:sequen
 """
 function sequential_projectors(col::Int, network, env::CTMRGEnv, alg::ProjectorAlgorithm)
     coordinates = eachcoordinate(env)[:, col]
-    proj_and_info = dtmap(coordinates) do (r, c)
-        trscheme = truncation_scheme(alg, env.edges[WEST, _prev(r, size(env, 2)), c])
+    T_dst = Base.promote_op(
+        sequential_projectors, NTuple{3, Int}, typeof(network), typeof(env), typeof(alg)
+    )
+    proj_and_info = similar(coordinates, T_dst)
+    proj_and_info′::typeof(proj_and_info) = dtmap!!(proj_and_info, coordinates) do (r, c)
+        trunc = truncation_strategy(alg, env.edges[WEST, _prev(r, size(env, 2)), c])
         proj, info = sequential_projectors(
-            (WEST, r, c), network, env, @set(alg.trscheme = trscheme)
+            (WEST, r, c), network, env, @set(alg.trunc = trunc)
         )
         return proj, info
     end
-    return _split_proj_and_info(proj_and_info)
+    return _split_proj_and_info(proj_and_info′)
 end
 function sequential_projectors(
-    coordinate::NTuple{3,Int}, network, env::CTMRGEnv, alg::HalfInfiniteProjector
-)
+        coordinate::NTuple{3, Int}, network, env::CTMRGEnv, alg::HalfInfiniteProjector
+    )
     _, r, c = coordinate
     r′ = _prev(r, size(env, 2))
-    Q1 = TensorMap(EnlargedCorner(network, env, (SOUTHWEST, r, c)), SOUTHWEST)
-    Q2 = TensorMap(EnlargedCorner(network, env, (NORTHWEST, r′, c)), NORTHWEST)
+    Q1 = TensorMap(EnlargedCorner(network, env, (SOUTHWEST, r, c)))
+    Q2 = TensorMap(EnlargedCorner(network, env, (NORTHWEST, r′, c)))
     return compute_projector((Q1, Q2), coordinate, alg)
 end
 function sequential_projectors(
-    coordinate::NTuple{3,Int}, network, env::CTMRGEnv, alg::FullInfiniteProjector
-)
+        coordinate::NTuple{3, Int}, network, env::CTMRGEnv, alg::FullInfiniteProjector
+    )
     rowsize, colsize = size(env)[2:3]
     coordinate_nw = _next_coordinate(coordinate, rowsize, colsize)
     coordinate_ne = _next_coordinate(coordinate_nw, rowsize, colsize)
     coordinate_se = _next_coordinate(coordinate_ne, rowsize, colsize)
     ec = (
-        TensorMap(EnlargedCorner(network, env, coordinate_se), SOUTHEAST),
-        TensorMap(EnlargedCorner(network, env, coordinate), SOUTHWEST),
-        TensorMap(EnlargedCorner(network, env, coordinate_nw), NORTHWEST),
-        TensorMap(EnlargedCorner(network, env, coordinate_ne), NORTHEAST),
+        TensorMap(EnlargedCorner(network, env, coordinate_se)),
+        TensorMap(EnlargedCorner(network, env, coordinate)),
+        TensorMap(EnlargedCorner(network, env, coordinate_nw)),
+        TensorMap(EnlargedCorner(network, env, coordinate_ne)),
     )
     return compute_projector(ec, coordinate, alg)
 end

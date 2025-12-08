@@ -15,31 +15,32 @@ Module containing default algorithm parameter values and arguments.
 
 ## SVD forward & reverse
 
-* `trscheme=:$(Defaults.trscheme)` : Truncation scheme for SVDs and other decompositions.
+* `trunc=:$(Defaults.trunc)` : Truncation scheme for SVDs and other decompositions.
     - `:fixedspace` : Keep virtual spaces fixed during projection
     - `:notrunc` : No singular values are truncated and the performed SVDs are exact
-    - `:truncerr` : Additionally supply error threshold `η`; truncate to the maximal virtual dimension of `η`
-    - `:truncdim` : Additionally supply truncation dimension `η`; truncate such that the 2-norm of the truncated values is smaller than `η`
+    - `:truncerror` : Additionally supply error threshold `η`; truncate to the maximal virtual dimension of `η`
+    - `:truncrank` : Additionally supply truncation dimension `η`; truncate such that the 2-norm of the truncated values is smaller than `η`
     - `:truncspace` : Additionally supply truncation space `η`; truncate according to the supplied vector space 
-    - `:truncbelow` : Additionally supply singular value cutoff `η`; truncate such that every retained singular value is larger than `η`
+    - `:trunctol` : Additionally supply singular value cutoff `η`; truncate such that every retained singular value is larger than `η`
 * `svd_fwd_alg=:$(Defaults.svd_fwd_alg)` : SVD algorithm that is used in the forward pass.
-    - `:sdd`: TensorKit's wrapper for LAPACK's `_gesdd`
-    - `:svd`: TensorKit's wrapper for LAPACK's `_gesvd`
-    - `:iterative`: Iterative SVD only computing the specifed number of singular values and vectors, see ['IterSVD'](@ref)
+    - `:sdd`: MatrixAlgebraKit's `LAPACK_DivideAndConquer`
+    - `:svd`: MatrixAlgebraKit's `LAPACK_QRIteration`
+    - `:iterative`: Iterative SVD only computing the specifed number of singular values and vectors, see [`IterSVD`](@ref PEPSKit.IterSVD)
 * `svd_rrule_tol=$(Defaults.svd_rrule_tol)` : Accuracy of SVD reverse-rule.
 * `svd_rrule_min_krylovdim=$(Defaults.svd_rrule_min_krylovdim)` : Minimal Krylov dimension of the reverse-rule algorithm (if it is a Krylov algorithm).
 * `svd_rrule_verbosity=$(Defaults.svd_rrule_verbosity)` : SVD gradient output verbosity.
 * `svd_rrule_alg=:$(Defaults.svd_rrule_alg)` : Reverse-rule algorithm for the SVD gradient.
-    - `:tsvd`: Uses TensorKit's reverse-rule for `tsvd` which doesn't solve any linear problem and instead requires access to the full SVD, see [TensorKit](https://github.com/Jutho/TensorKit.jl/blob/f9cddcf97f8d001888a26f4dce7408d5c6e2228f/ext/TensorKitChainRulesCoreExt/factorizations.jl#L3)
+    - `:full`: Uses a modified version of MatrixAlgebraKit's reverse-rule for `svd_compact` which doesn't solve any linear problem and instead requires access to the full SVD, see [`PEPSKit.FullSVDReverseRule`](@ref).
     - `:gmres`: GMRES iterative linear solver, see the [KrylovKit docs](https://jutho.github.io/KrylovKit.jl/stable/man/algorithms/#KrylovKit.GMRES) for details
     - `:bicgstab`: BiCGStab iterative linear solver, see the [KrylovKit docs](https://jutho.github.io/KrylovKit.jl/stable/man/algorithms/#KrylovKit.BiCGStab) for details
     - `:arnoldi`: Arnoldi Krylov algorithm, see the [KrylovKit docs](https://jutho.github.io/KrylovKit.jl/stable/man/algorithms/#KrylovKit.Arnoldi) for details
+* `svd_rrule_broadening=$(Defaults.svd_rrule_broadening)` : Lorentzian broadening amplitude which smoothens the divergent term in the SVD adjoint in case of (pseudo) degenerate singular values
 
 ## Projectors
 
 * `projector_alg=:$(Defaults.projector_alg)` : Default variant of the CTMRG projector algorithm.
-    - `halfinfinite`: Projection via SVDs of half-infinite (two enlarged corners) CTMRG environments.
-    - `fullinfinite`: Projection via SVDs of full-infinite (all four enlarged corners) CTMRG environments.
+    - `:halfinfinite`: Projection via SVDs of half-infinite (two enlarged corners) CTMRG environments.
+    - `:fullinfinite`: Projection via SVDs of full-infinite (all four enlarged corners) CTMRG environments.
 * `projector_verbosity=$(Defaults.projector_verbosity)` : Projector output information verbosity.
 
 ## Fixed-point gradient
@@ -48,10 +49,10 @@ Module containing default algorithm parameter values and arguments.
 * `gradient_maxiter=$(Defaults.gradient_maxiter)` : Maximal number of iterations for computing the CTMRG fixed-point gradient.
 * `gradient_verbosity=$(Defaults.gradient_verbosity)` : Gradient output information verbosity.
 * `gradient_linsolver=:$(Defaults.gradient_linsolver)` : Default linear solver for the `LinSolver` gradient algorithm.
-    - `:gmres` : GMRES iterative linear solver, see the [KrylovKit docs](https://jutho.github.io/KrylovKit.jl/stable/man/algorithms/#KrylovKit.GMRES) for details
-    - `:bicgstab` : BiCGStab iterative linear solver, see the [KrylovKit docs](https://jutho.github.io/KrylovKit.jl/stable/man/algorithms/#KrylovKit.BiCGStab) for details
+    - `:gmres` : GMRES iterative linear solver, see [`KrylovKit.GMRES`](@extref) for details
+    - `:bicgstab` : BiCGStab iterative linear solver, see [`KrylovKit.BiCGStab`](@extref) for details
 * `gradient_eigsolver=:$(Defaults.gradient_eigsolver)` : Default eigensolver for the `EigSolver` gradient algorithm.
-    - `:arnoldi` : Arnoldi Krylov algorithm, see the [KrylovKit docs](https://jutho.github.io/KrylovKit.jl/stable/man/algorithms/#KrylovKit.Arnoldi) for details
+    - `:arnoldi` : Arnoldi Krylov algorithm, see [`KrylovKit.Arnoldi`](@extref) for details
 * `gradient_eigsolver_eager=$(Defaults.gradient_eigsolver_eager)` : Enables `EigSolver` algorithm to finish before the full Krylov dimension is reached.
 * `gradient_iterscheme=:$(Defaults.gradient_iterscheme)` : Scheme for differentiating one CTMRG iteration.
     - `:fixed` : the differentiated CTMRG iteration uses a pre-computed SVD with a fixed set of gauges
@@ -74,7 +75,7 @@ Module containing default algorithm parameter values and arguments.
 
 ## OhMyThreads scheduler
 
-- `scheduler=Ref{Scheduler}(...)` : Multi-threading scheduler which can be accessed via `set_scheduler!`.
+- `scheduler=Ref{Scheduler}(...)` : Multithreading scheduler which can be accessed via `set_scheduler!`.
 """
 module Defaults
 
@@ -83,7 +84,7 @@ export set_scheduler!
 using OhMyThreads
 
 # CTMRG
-const ctmrg_tol = 1e-8
+const ctmrg_tol = 1.0e-8
 const ctmrg_maxiter = 100
 const ctmrg_miniter = 4
 const ctmrg_alg = :simultaneous # ∈ {:simultaneous, :sequential}
@@ -91,12 +92,13 @@ const ctmrg_verbosity = 2
 const sparse = false # TODO: implement sparse CTMRG
 
 # SVD forward & reverse
-const trscheme = :fixedspace # ∈ {:fixedspace, :notrunc, :truncerr, :truncspace, :truncbelow}
+const trunc = :fixedspace # ∈ {:fixedspace, :notrunc, :truncerror, :truncspace, :trunctol}
 const svd_fwd_alg = :sdd # ∈ {:sdd, :svd, :iterative}
 const svd_rrule_tol = ctmrg_tol
 const svd_rrule_min_krylovdim = 48
 const svd_rrule_verbosity = -1
-const svd_rrule_alg = :tsvd # ∈ {:tsvd, :gmres, :bicgstab, :arnoldi}
+const svd_rrule_alg = :full # ∈ {:full, :gmres, :bicgstab, :arnoldi}
+const svd_rrule_broadening = 1.0e-13
 const krylovdim_factor = 1.4
 
 # Projectors
@@ -104,18 +106,18 @@ const projector_alg = :halfinfinite # ∈ {:halfinfinite, :fullinfinite}
 const projector_verbosity = 0
 
 # Fixed-point gradient
-const gradient_tol = 1e-6
+const gradient_tol = 1.0e-6
 const gradient_maxiter = 30
 const gradient_verbosity = -1
 const gradient_linsolver = :bicgstab # ∈ {:gmres, :bicgstab}
 const gradient_eigsolver = :arnoldi
 const gradient_eigsolver_eager = true
 const gradient_iterscheme = :fixed # ∈ {:fixed, :diffgauge}
-const gradient_alg = :linsolver # ∈ {:geomsum, :manualiter, :linsolver, :eigsolver}
+const gradient_alg = :eigsolver # ∈ {:geomsum, :manualiter, :linsolver, :eigsolver}
 
 # Optimization
 const reuse_env = true
-const optimizer_tol = 1e-4
+const optimizer_tol = 1.0e-4
 const optimizer_maxiter = 100
 const optimizer_verbosity = 3
 const optimizer_alg = :lbfgs # ∈ {:gradientdescent, :conjugategradient, :lbfgs}
@@ -129,7 +131,7 @@ const scheduler = Ref{Scheduler}()
 """
     set_scheduler!([scheduler]; kwargs...)
 
-Set `OhMyThreads` multi-threading scheduler parameters.
+Set `OhMyThreads` multithreading scheduler parameters.
 
 The function either accepts a `scheduler` as an `OhMyThreads.Scheduler` or
 as a symbol where the corresponding parameters are specificed as keyword arguments.
@@ -143,7 +145,7 @@ or equivalently with
 set_scheduler!(:static; ntasks=4, chunking=true)
 ```
 For a detailed description of all schedulers and their keyword arguments consult the
-[`OhMyThreads` documentation](https://juliafolds2.github.io/OhMyThreads.jl/stable/refs/api/#Schedulers).
+[OhMyThreads](https://juliafolds2.github.io/OhMyThreads.jl/stable/refs/api/#OhMyThreads.Schedulers.Scheduler) documentation.
 
 If no `scheduler` is passed and only kwargs are provided, the `DynamicScheduler`
 constructor is used with the provided kwargs.
@@ -152,7 +154,7 @@ To reset the scheduler to its default value, one calls `set_scheduler!` without 
 arguments which then uses the default `DynamicScheduler()`. If the number of used threads is
 just one it falls back to `SerialScheduler()`.
 """
-function set_scheduler!(sc=OhMyThreads.Implementation.NotGiven(); kwargs...)
+function set_scheduler!(sc = OhMyThreads.Implementation.NotGiven(); kwargs...)
     if isempty(kwargs) && sc isa OhMyThreads.Implementation.NotGiven
         scheduler[] = Threads.nthreads() == 1 ? SerialScheduler() : DynamicScheduler()
     else

@@ -1,8 +1,10 @@
 using Test
+using TestExtras: @constinferred
 using Accessors
 using Random
 using LinearAlgebra
 using TensorKit, KrylovKit
+using MatrixAlgebraKit: LAPACK_DivideAndConquer
 using PEPSKit
 using PEPSKit:
     FixedSVD,
@@ -16,52 +18,52 @@ using PEPSKit:
 # initialize parameters
 χbond = 2
 χenv = 16
-svd_algs = [SVDAdjoint(; fwd_alg=TensorKit.SDD()), SVDAdjoint(; fwd_alg=IterSVD())]
+svd_algs = [SVDAdjoint(; fwd_alg = LAPACK_DivideAndConquer()), SVDAdjoint(; fwd_alg = IterSVD())]
 projector_algs = [:halfinfinite] #, :fullinfinite]
 unitcells = [(1, 1), (3, 4)]
-atol = 1e-5
+atol = 1.0e-5
 
 # test for element-wise convergence after application of fixed step
 @testset "$unitcell unit cell with $(typeof(svd_alg.fwd_alg)) and $projector_alg" for (
-    unitcell, svd_alg, projector_alg
-) in Iterators.product(
-    unitcells, svd_algs, projector_algs
-)
+        unitcell, svd_alg, projector_alg,
+    ) in Iterators.product(
+        unitcells, svd_algs, projector_algs
+    )
     ctm_alg = SimultaneousCTMRG(; svd_alg, projector_alg)
 
     # initialize states
     Random.seed!(2394823842)
-    psi = InfinitePEPS(2, χbond; unitcell)
+    psi = InfinitePEPS(ComplexSpace(2), ComplexSpace(χbond); unitcell)
     n = InfiniteSquareNetwork(psi)
 
     env_conv1, = leading_boundary(CTMRGEnv(psi, ComplexSpace(χenv)), psi, ctm_alg)
 
     # do extra iteration to get SVD
-    env_conv2, info = ctmrg_iteration(n, env_conv1, ctm_alg)
+    env_conv2, info = @constinferred ctmrg_iteration(n, env_conv1, ctm_alg)
     env_fix, signs = gauge_fix(env_conv1, env_conv2)
     @test calc_elementwise_convergence(env_conv1, env_fix) ≈ 0 atol = atol
 
     # fix gauge of SVD
     svd_alg_fix = _fix_svd_algorithm(ctm_alg.projector_alg.svd_alg, signs, info)
     ctm_alg_fix = @set ctm_alg.projector_alg.svd_alg = svd_alg_fix
-    ctm_alg_fix = @set ctm_alg_fix.projector_alg.trscheme = notrunc()
+    ctm_alg_fix = @set ctm_alg_fix.projector_alg.trunc = notrunc()
 
     # do iteration with FixedSVD
-    env_fixedsvd, = ctmrg_iteration(n, env_conv1, ctm_alg_fix)
+    env_fixedsvd, = @constinferred ctmrg_iteration(n, env_conv1, ctm_alg_fix)
     env_fixedsvd = fix_global_phases(env_conv1, env_fixedsvd)
     @test calc_elementwise_convergence(env_conv1, env_fixedsvd) ≈ 0 atol = atol
 end
 
-@testset "Element-wise consistency of TensorKit.SDD and IterSVD" begin
+@testset "Element-wise consistency of LAPACK_DivideAndConquer and IterSVD" begin
     ctm_alg_iter = SimultaneousCTMRG(;
-        maxiter=200,
-        svd_alg=SVDAdjoint(; fwd_alg=IterSVD(; alg=GKL(; tol=1e-14, krylovdim=χenv + 10))),
+        maxiter = 200,
+        svd_alg = SVDAdjoint(; fwd_alg = IterSVD(; alg = GKL(; tol = 1.0e-14, krylovdim = χenv + 10))),
     )
-    ctm_alg_full = SimultaneousCTMRG(; svd_alg=SVDAdjoint(; fwd_alg=TensorKit.SDD()))
+    ctm_alg_full = SimultaneousCTMRG(; svd_alg = SVDAdjoint(; fwd_alg = LAPACK_DivideAndConquer()))
 
     # initialize states
     Random.seed!(91283219347)
-    psi = InfinitePEPS(2, χbond)
+    psi = InfinitePEPS(ComplexSpace(2), ComplexSpace(χbond))
     n = InfiniteSquareNetwork(psi)
     env₀ = CTMRGEnv(psi, ComplexSpace(χenv))
     env_conv1, = leading_boundary(env₀, psi, ctm_alg_iter)
@@ -80,13 +82,13 @@ end
         ctm_alg_iter.projector_alg.svd_alg, signs_iter, info_iter
     )
     ctm_alg_fix_iter = @set ctm_alg_iter.projector_alg.svd_alg = svd_alg_fix_iter
-    ctm_alg_fix_iter = @set ctm_alg_fix_iter.projector_alg.trscheme = notrunc()
+    ctm_alg_fix_iter = @set ctm_alg_fix_iter.projector_alg.trunc = notrunc()
 
     svd_alg_fix_full = _fix_svd_algorithm(
         ctm_alg_full.projector_alg.svd_alg, signs_full, info_full
     )
     ctm_alg_fix_full = @set ctm_alg_full.projector_alg.svd_alg = svd_alg_fix_full
-    ctm_alg_fix_full = @set ctm_alg_fix_full.projector_alg.trscheme = notrunc()
+    ctm_alg_fix_full = @set ctm_alg_fix_full.projector_alg.trunc = notrunc()
 
     # do iteration with FixedSVD
     env_fixedsvd_iter, = ctmrg_iteration(n, env_conv1, ctm_alg_fix_iter)

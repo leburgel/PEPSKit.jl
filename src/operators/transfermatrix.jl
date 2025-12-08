@@ -12,11 +12,11 @@ import MPSKit: Multiline, MultilineEnvironments
 Represents an infinite transfer operator corresponding to a single row of a partition
 function which corresponds to the overlap between 'ket' and 'bra' `InfinitePEPS` states.
 """
-const InfiniteTransferPEPS{T<:PEPSTensor} = InfiniteMPO{PEPSSandwich{T}}
+const InfiniteTransferPEPS{T <: PEPSTensor} = InfiniteMPO{PEPSSandwich{T}}
 
 function InfiniteTransferPEPS(
-    top::PeriodicArray{T,1}, bot::PeriodicArray{T,1}
-) where {T<:PEPSTensor}
+        top::PeriodicArray{T, 1}, bot::PeriodicArray{T, 1}
+    ) where {T <: PEPSTensor}
     return InfiniteMPO(map(tuple, top, bot))
 end
 
@@ -67,14 +67,14 @@ Represents an infinite transfer operator corresponding to a single row of a part
 function which corresponds to the expectation value of an `InfinitePEPO` between 'ket' and
 'bra' `InfinitePEPS` states.
 """
-const InfiniteTransferPEPO{H,T<:PEPSTensor,O<:PEPOTensor} = InfiniteMPO{PEPOSandwich{H,T,O}}
+const InfiniteTransferPEPO{H, T <: PEPSTensor, O <: PEPOTensor} = InfiniteMPO{PEPOSandwich{H, T, O}}
 
 function InfiniteTransferPEPO(
-    top::PeriodicArray{T,1}, mid::PeriodicArray{O,2}, bot::PeriodicArray{T,1}
-) where {T,O}
+        top::PeriodicArray{T, 1}, mid::PeriodicArray{O, 2}, bot::PeriodicArray{T, 1}
+    ) where {T, O}
     size(top, 1) == size(bot, 1) == size(mid, 1) ||
         throw(ArgumentError("Top PEPS, bottom PEPS and PEPO rows should have length"))
-    return InfiniteMPO(map(tuple, top, bot, eachslice(mid; dims=2)...))
+    return InfiniteMPO(map(tuple, top, bot, eachslice(mid; dims = 2)...))
 end
 
 InfiniteTransferPEPO(top, mid) = InfiniteTransferPEPO(top, mid, top)
@@ -119,17 +119,21 @@ end
 # Common interface
 #
 
-const InfiniteTransferMatrix = Union{InfiniteTransferPEPS,InfiniteTransferPEPO}
-const MultilineTransferMatrix = Union{MultilineTransferPEPS,MultilineTransferPEPO}
+const InfiniteTransferMatrix = Union{InfiniteTransferPEPS, InfiniteTransferPEPO}
+const MultilineTransferMatrix = Union{MultilineTransferPEPS, MultilineTransferPEPO}
 
 virtualspace(O::InfiniteTransferMatrix, i, dir) = virtualspace(O[i], dir)
 
 """
-    initializeMPS(
+    initialize_mps(
+        f=randn,
+        T=scalartype(O),
         O::Union{InfiniteTransferPEPS,InfiniteTransferPEPO},
         virtualspaces::AbstractArray{<:ElementarySpace,1}
     )
-    initializeMPS(
+    initialize_mps(
+        f=randn,
+        T=scalartype(O),
         O::Union{MultilineTransferPEPS,MultilineTransferPEPO},
         virtualspaces::AbstractArray{<:ElementarySpace,2}
     )
@@ -137,41 +141,37 @@ virtualspace(O::InfiniteTransferMatrix, i, dir) = virtualspace(O[i], dir)
 Inialize a boundary MPS for the transfer operator `O` by specifying an array of virtual
 spaces consistent with the unit cell.
 """
-function initializeMPS(
-    O::InfiniteTransferMatrix, virtualspaces::AbstractArray{S,1}
-) where {S}
-    return InfiniteMPS([
-        randn(
-            scalartype(O),
-            virtualspaces[_prev(i, end)] * _elementwise_dual(north_virtualspace(O, i)),
-            virtualspaces[mod1(i, end)],
-        ) for i in 1:length(O)
-    ])
+function initialize_mps(O::Union{InfiniteTransferMatrix, MultilineTransferMatrix}, arg) # initialize(f=randn, T=scalartype(O), O, ...)
+    return initialize_mps(randn, scalartype(O), O, arg)
 end
-function initializeMPS(O::InfiniteTransferMatrix, χ::Int)
-    return InfiniteMPS([
-        randn(calartype(O), ℂ^χ * _elementwise_dual(north_virtualspace(O, i)), ℂ^χ) for
-        i in 1:length(O)
-    ])
+function initialize_mps(
+        f, T, O::InfiniteTransferMatrix, virtualspaces::AbstractArray{S, 1}
+    ) where {S}
+    return InfiniteMPS(
+        [
+            f(
+                    T,
+                    virtualspaces[_prev(i, end)] * _elementwise_dual(north_virtualspace(O, i)),
+                    virtualspaces[mod1(i, end)],
+                ) for i in 1:length(O)
+        ]
+    )
 end
-function initializeMPS(
-    O::MultilineTransferMatrix, virtualspaces::AbstractArray{S,2}
-) where {S}
+function initialize_mps(
+        f, T, O::MultilineTransferMatrix, virtualspaces::AbstractArray{S, 2}
+    ) where {S}
     mpss = map(1:size(O, 1)) do r
-        return initializeMPS(O[r], virtualspaces[r, :])
+        return initialize_mps(f, T, O[r], virtualspaces[r, :])
     end
     return MPSKit.Multiline(mpss)
 end
-function initializeMPS(
-    O::MultilineTransferMatrix, virtualspaces::AbstractArray{S,1}
-) where {S}
-    return initializeMPS(O, repeat(virtualspaces, length(O), 1))
+function initialize_mps(
+        f, T, O::MultilineTransferMatrix, virtualspaces::AbstractArray{S, 1}
+    ) where {S}
+    return initialize_mps(f, T, O, repeat(virtualspaces, length(O), 1))
 end
-function initializeMPS(O::MultilineTransferMatrix, V::ElementarySpace)
-    return initializeMPS(O, repeat([V], length(O), length(O[1])))
-end
-function initializeMPS(O::MultilineTransferMatrix, χ::Int)
-    return initializeMPS(O, repeat([ℂ^χ], length(O), length(O[1])))
+function initialize_mps(f, T, O::MultilineTransferMatrix, V::ElementarySpace)
+    return initialize_mps(f, T, O, repeat([V], length(O), length(O[1])))
 end
 
 @doc """

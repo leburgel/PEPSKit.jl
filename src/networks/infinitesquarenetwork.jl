@@ -1,7 +1,11 @@
 """
-    InfiniteSquareNetwork{O}
+$(TYPEDEF)
 
 Contractible square network. Wraps a matrix of 'rank-4-tensor-like' objects.
+
+## Fields
+
+$(TYPEDFIELDS)
 """
 struct InfiniteSquareNetwork{O}
     A::Matrix{O}
@@ -10,11 +14,11 @@ struct InfiniteSquareNetwork{O}
         for I in eachindex(IndexCartesian(), A)
             d, w = Tuple(I)
             north_virtualspace(A[d, w]) ==
-            _elementwise_dual(south_virtualspace(A[_prev(d, end), w])) || throw(
+                _elementwise_dual(south_virtualspace(A[_prev(d, end), w])) || throw(
                 SpaceMismatch("North virtual space at site $((d, w)) does not match.")
             )
             east_virtualspace(A[d, w]) ==
-            _elementwise_dual(west_virtualspace(A[d, _next(w, end)])) ||
+                _elementwise_dual(west_virtualspace(A[d, _next(w, end)])) ||
                 throw(SpaceMismatch("East virtual space at site $((d, w)) does not match."))
         end
         return InfiniteSquareNetwork{eltype(A)}(A)
@@ -31,7 +35,7 @@ Base.eltype(n::InfiniteSquareNetwork) = eltype(typeof(n))
 Base.eltype(::Type{InfiniteSquareNetwork{O}}) where {O} = O
 
 Base.copy(n::InfiniteSquareNetwork) = InfiniteSquareNetwork(copy(unitcell(n)))
-function Base.similar(n::InfiniteSquareNetwork, T::Type{TorA}=scalartype(n)) where {TorA}
+function Base.similar(n::InfiniteSquareNetwork, T::Type{TorA} = scalartype(n)) where {TorA}
     return InfiniteSquareNetwork(map(t -> similar(t, T), unitcell(n)))
 end
 function Base.repeat(n::InfiniteSquareNetwork, counts...)
@@ -51,11 +55,15 @@ end
 
 ## Spaces
 
-virtualspace(n::InfiniteSquareNetwork, r::Int, c::Int, dir) = virtualspace(n[r, c], dir)
+TensorKit.spacetype(::Type{T}) where {T <: InfiniteSquareNetwork} = spacetype(eltype(T))
+function virtualspace(n::InfiniteSquareNetwork, r::Int, c::Int, dir)
+    Nr, Nc = size(n)
+    return virtualspace(n[mod1(r, Nr), mod1(c, Nc)], dir)
+end
 
 ## Vector interface
 
-function VectorInterface.scalartype(::Type{T}) where {T<:InfiniteSquareNetwork}
+function VectorInterface.scalartype(::Type{T}) where {T <: InfiniteSquareNetwork}
     return scalartype(eltype(T))
 end
 function VectorInterface.zerovector(A::InfiniteSquareNetwork)
@@ -91,7 +99,7 @@ function Base.:(==)(A₁::InfiniteSquareNetwork, A₂::InfiniteSquareNetwork)
 end
 function Base.isapprox(A₁::InfiniteSquareNetwork, A₂::InfiniteSquareNetwork; kwargs...)
     return all(zip(unitcell(A₁), unitcell(A₂))) do (p₁, p₂)
-        return isapprox(p₁, p₂; kwargs...)
+        return _isapprox_localsandwich(p₁, p₂; kwargs...)
     end
 end
 
@@ -111,8 +119,8 @@ end
 
 # generic implementation
 function ChainRulesCore.rrule(
-    ::typeof(Base.getindex), network::InfiniteSquareNetwork, r::Int, c::Int
-)
+        ::typeof(Base.getindex), network::InfiniteSquareNetwork, r::Int, c::Int
+    )
     O = network[r, c]
 
     function getindex_pullback(ΔO_)
@@ -129,8 +137,8 @@ end
 
 # specialized PFTensor implementation
 function ChainRulesCore.rrule(
-    ::typeof(Base.getindex), network::InfiniteSquareNetwork{<:PFTensor}, r::Int, c::Int
-)
+        ::typeof(Base.getindex), network::InfiniteSquareNetwork{<:PFTensor}, r::Int, c::Int
+    )
     O = network[r, c]
 
     function getindex_pullback(ΔO_)

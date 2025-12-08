@@ -1,23 +1,27 @@
 """
-    CTMRGAlgorithm
+$(TYPEDEF)
 
 Abstract super type for the corner transfer matrix renormalization group (CTMRG) algorithm
 for contracting infinite PEPS.
 """
 abstract type CTMRGAlgorithm end
 
-const CTMRG_SYMBOLS = IdDict{Symbol,Type{<:CTMRGAlgorithm}}()
+const CTMRG_SYMBOLS = IdDict{Symbol, Type{<:CTMRGAlgorithm}}()
 
+"""
+    CTMRGAlgorithm(; kwargs...)
+
+Keyword argument parser returning the appropriate `CTMRGAlgorithm` algorithm struct.
+"""
 function CTMRGAlgorithm(;
-    alg=Defaults.ctmrg_alg,
-    tol=Defaults.ctmrg_tol,
-    maxiter=Defaults.ctmrg_maxiter,
-    miniter=Defaults.ctmrg_miniter,
-    verbosity=Defaults.ctmrg_verbosity,
-    trscheme=(; alg=Defaults.trscheme),
-    svd_alg=(;),
-    projector_alg=Defaults.projector_alg, # only allows for Symbol/NamedTuple to expose projector kwargs
-)
+        alg = Defaults.ctmrg_alg,
+        tol = Defaults.ctmrg_tol,
+        maxiter = Defaults.ctmrg_maxiter, miniter = Defaults.ctmrg_miniter,
+        verbosity = Defaults.ctmrg_verbosity,
+        trunc = (; alg = Defaults.trunc),
+        svd_alg = (;),
+        projector_alg = Defaults.projector_alg, # only allows for Symbol/NamedTuple to expose projector kwargs
+    )
     # replace symbol with projector alg type
     haskey(CTMRG_SYMBOLS, alg) || throw(ArgumentError("unknown CTMRG algorithm: $alg"))
     alg_type = CTMRG_SYMBOLS[alg]
@@ -25,7 +29,7 @@ function CTMRGAlgorithm(;
     # parse CTMRG projector algorithm
 
     projector_algorithm = ProjectorAlgorithm(;
-        alg=projector_alg, svd_alg, trscheme, verbosity
+        alg = projector_alg, svd_alg, trunc, verbosity
     )
 
     return alg_type(tol, maxiter, miniter, verbosity, projector_algorithm)
@@ -39,7 +43,7 @@ Perform a single CTMRG iteration in which all directions are being grown and ren
 function ctmrg_iteration(network, env, alg::CTMRGAlgorithm) end
 
 """
-    leading_boundary(env₀, network; kwargs...)
+    leading_boundary(env₀, network; kwargs...) -> env, info
     # expert version:
     leading_boundary(env₀, network, alg::CTMRGAlgorithm)
 
@@ -65,33 +69,53 @@ supplied via the keyword arguments or directly as an [`CTMRGAlgorithm`](@ref) st
 
 ### Projector algorithm
 
-* `trscheme::Union{TruncationScheme,NamedTuple}=(; alg::Symbol=:$(Defaults.trscheme))` : Truncation scheme for the projector computation, which controls the resulting virtual spaces. Here, `alg` can be one of the following:
+* `trunc::Union{TruncationStrategy,NamedTuple}=(; alg::Symbol=:$(Defaults.trunc))` : Truncation strategy for the projector computation, which controls the resulting virtual spaces. Here, `alg` can be one of the following:
     - `:fixedspace` : Keep virtual spaces fixed during projection
     - `:notrunc` : No singular values are truncated and the performed SVDs are exact
-    - `:truncerr` : Additionally supply error threshold `η`; truncate to the maximal virtual dimension of `η`
-    - `:truncdim` : Additionally supply truncation dimension `η`; truncate such that the 2-norm of the truncated values is smaller than `η`
+    - `:truncerror` : Additionally supply error threshold `η`; truncate to the maximal virtual dimension of `η`
+    - `:truncrank` : Additionally supply truncation dimension `η`; truncate such that the 2-norm of the truncated values is smaller than `η`
     - `:truncspace` : Additionally supply truncation space `η`; truncate according to the supplied vector space 
-    - `:truncbelow` : Additionally supply singular value cutoff `η`; truncate such that every retained singular value is larger than `η`
+    - `:trunctol` : Additionally supply singular value cutoff `η`; truncate such that every retained singular value is larger than `η`
 * `svd_alg::Union{<:SVDAdjoint,NamedTuple}` : SVD algorithm for computing projectors. See also [`SVDAdjoint`](@ref). By default, a reverse-rule tolerance of `tol=1e1tol` where the `krylovdim` is adapted to the `env₀` environment dimension.
 * `projector_alg::Symbol=:$(Defaults.projector_alg)` : Variant of the projector algorithm. See also [`ProjectorAlgorithm`](@ref).
-    - `halfinfinite`: Projection via SVDs of half-infinite (two enlarged corners) CTMRG environments.
-    - `fullinfinite`: Projection via SVDs of full-infinite (all four enlarged corners) CTMRG environments.
+    - `:halfinfinite` : Projection via SVDs of half-infinite (two enlarged corners) CTMRG environments.
+    - `:fullinfinite` : Projection via SVDs of full-infinite (all four enlarged corners) CTMRG environments.
+
+## Return values
+
+The CTMRG routine returns the final CTMRG environment as well as an information `NamedTuple`
+containing the following fields:
+
+* `truncation_error` : Last (maximal) SVD truncation error of the CTMRG projectors.
+* `condition_number` : Last (maximal) condition number of the enlarged CTMRG environment.
+
+In case the `alg` is a `SimultaneousCTMRG`, the last SVD will also be returned:
+
+* `U` : Last unit cell of left singular vectors.
+* `S` : Last unit cell of singular values.
+* `V` : Last unit cell of right singular vectors.
+
+If, in addition, the specified SVD algorithm computes the full, untruncated SVD, the full
+set of vectors and values will be returned as well:
+
+* `U_full` : Last unit cell of all left singular vectors.
+* `S_full` : Last unit cell of all singular values.
+* `V_full` : Last unit cell of all right singular vectors.
 """
 function leading_boundary(env₀::CTMRGEnv, network::InfiniteSquareNetwork; kwargs...)
     alg = select_algorithm(leading_boundary, env₀; kwargs...)
     return leading_boundary(env₀, network, alg)
 end
 function leading_boundary(
-    env₀::CTMRGEnv, network::InfiniteSquareNetwork, alg::CTMRGAlgorithm
-)
-    CS = map(x -> tsvd(x)[2], env₀.corners)
-    TS = map(x -> tsvd(x)[2], env₀.edges)
-
-    η = one(real(scalartype(network)))
-    env = deepcopy(env₀)
+        env₀::CTMRGEnv, network::InfiniteSquareNetwork, alg::CTMRGAlgorithm
+    )
     log = ignore_derivatives(() -> MPSKit.IterLog("CTMRG"))
-
     return LoggingExtras.withlevel(; alg.verbosity) do
+        env = deepcopy(env₀)
+        CS, TS = ignore_derivatives() do
+            return map(svd_vals, env₀.corners), map(svd_vals, env₀.edges)
+        end
+        η = one(real(scalartype(network)))
         ctmrg_loginit!(log, η, network, env₀)
         local info
         for iter in 1:(alg.maxiter)
@@ -117,16 +141,16 @@ end
 
 # custom CTMRG logging
 function ctmrg_loginit!(log, η, network, env)
-    @infov 2 loginit!(log, η, network_value(network, env))
+    return @infov 2 loginit!(log, η, network_value(network, env))
 end
 function ctmrg_logiter!(log, iter, η, network, env)
-    @infov 3 logiter!(log, iter, η, network_value(network, env))
+    return @infov 3 logiter!(log, iter, η, network_value(network, env))
 end
 function ctmrg_logfinish!(log, iter, η, network, env)
-    @infov 2 logfinish!(log, iter, η, network_value(network, env))
+    return @infov 2 logfinish!(log, iter, η, network_value(network, env))
 end
 function ctmrg_logcancel!(log, iter, η, network, env)
-    @warnv 1 logcancel!(log, iter, η, network_value(network, env))
+    return @warnv 1 logcancel!(log, iter, η, network_value(network, env))
 end
 
 @non_differentiable ctmrg_loginit!(args...)
@@ -134,13 +158,15 @@ end
 @non_differentiable ctmrg_logfinish!(args...)
 @non_differentiable ctmrg_logcancel!(args...)
 
-#=
-In order to compute an error measure, we compare the singular values of the current iteration with the previous one.
-However, when the virtual spaces change, this comparison is not directly possible.
-Instead, we project both tensors into the smaller space and then compare the difference.
+# TODO: we might want to consider embedding the smaller tensor into the larger space and then compute the difference
+"""
+    _singular_value_distance((S₁, S₂))
 
-TODO: we might want to consider embedding the smaller tensor into the larger space and then compute the difference
-=#
+Compute the singular value distance as an error measure, e.g. for CTMRG iterations.
+To that end, the singular values of the current iteration `S₁` are compared with the
+previous one `S₂`. When the virtual spaces change, this comparison is not directly possible
+such that both tensors are projected into the smaller space and then subtracted.
+"""
 function _singular_value_distance((S₁, S₂))
     V₁ = space(S₁, 1)
     V₂ = space(S₂, 1)
@@ -156,17 +182,17 @@ end
 
 """
     calc_convergence(env, CS_old, TS_old)
-    calc_convergence(env_new::CTMRGEnv, env_old::CTMRGEnv)
+    calc_convergence(env_new, env_old)
 
 Given a new environment `env`, compute the maximal singular value distance.
 This determined either from the previous corner and edge singular values
 `CS_old` and `TS_old`, or alternatively, directly from the old environment.
 """
 function calc_convergence(env, CS_old, TS_old)
-    CS_new = map(x -> tsvd(x)[2], env.corners)
+    CS_new = map(svd_vals, env.corners)
     ΔCS = maximum(_singular_value_distance, zip(CS_old, CS_new))
 
-    TS_new = map(x -> tsvd(x)[2], env.edges)
+    TS_new = map(svd_vals, env.edges)
     ΔTS = maximum(_singular_value_distance, zip(TS_old, TS_new))
 
     @debug "maxᵢ|Cⁿ⁺¹ - Cⁿ|ᵢ = $ΔCS   maxᵢ|Tⁿ⁺¹ - Tⁿ|ᵢ = $ΔTS"
@@ -174,8 +200,8 @@ function calc_convergence(env, CS_old, TS_old)
     return max(ΔCS, ΔTS), CS_new, TS_new
 end
 function calc_convergence(env_new::CTMRGEnv, env_old::CTMRGEnv)
-    CS_old = map(x -> tsvd(x)[2], env_old.corners)
-    TS_old = map(x -> tsvd(x)[2], env_old.edges)
+    CS_old = map(svd_vals, env_old.corners)
+    TS_old = map(svd_vals, env_old.edges)
     return calc_convergence(env_new, CS_old, TS_old)
 end
 @non_differentiable calc_convergence(args...)
