@@ -16,7 +16,7 @@ struct Rotation <: SymmetrizationStyle end # C4
 struct Reflection <: SymmetrizationStyle end # D2
 struct ReflectionRotation <: SymmetrizationStyle end # C4v
 struct HReflection <: SymmetrizationStyle end # D2
-struct HReflectionRotation <: SymmetrizationStyle end # C4v 
+struct HReflectionRotation <: SymmetrizationStyle end # C4v
 
 # unit cell styles
 abstract type UnitCellStyle end
@@ -114,8 +114,8 @@ get_point_group(::HReflection) = D2(), (:A, :B1)
 get_point_group(::HReflectionRotation) = C4v(), (:A1, :A2)
 
 function find_symmetric_basis(
-    P::S, V::S, symm_style::SymmetrizationStyle
-) where {S<:ElementarySpace}
+        P::S, V::S, symm_style::SymmetrizationStyle
+    ) where {S <: ElementarySpace}
     A0 = TensorMap(zeros, ComplexF64, P ← V ⊗ V ⊗ V ⊗ V)
     point_group, (real_rep, imag_rep) = get_point_group(symm_style)
     A_real = find_solution(point_group, A0, real_rep)
@@ -130,19 +130,19 @@ vec2peps(a::Vector{<:Real}, A_basis::Vector{<:PEPSTensor}) = sum(a .* A_basis)
 # --------------------------------------------
 
 function peps_opt_costfunction(
-    H;
-    boundary_alg=SimultaneousCTMRG(),
-    gradient_alg=LinSolver(),
-    reuse_env=true,
-    unitcell_style=Asymmetric(),
-    symm_style=HReflectionRotation(),
-)
+        H;
+        boundary_alg = SimultaneousCTMRG(),
+        gradient_alg = LinSolver(),
+        reuse_env = true,
+        unitcell_style = Asymmetric(),
+        symm_style = HReflectionRotation(),
+    )
     function peps_cfun(x)
         (A::PEPSTensor, env::CTMRGEnv) = x
         E, g = withgradient(A) do x
             ψ = fill_peps(x, unitcell_style) # the first bamboozle
             env´, _ = PEPSKit.hook_pullback(
-                leading_boundary, env, ψ, boundary_alg; alg_rrule=gradient_alg
+                leading_boundary, env, ψ, boundary_alg; alg_rrule = gradient_alg
             )
             ignore_derivatives() do
                 reuse_env && PEPSKit.update!(env, env´) # in-place update CTMRG environments
@@ -162,15 +162,15 @@ end
 # --------------------------------------------
 
 function vector_opt_costfunction(
-    H,
-    P::S,
-    V::S;
-    boundary_alg=SimultaneousCTMRG(),
-    gradient_alg=LinSolver(),
-    reuse_env=true,
-    unitcell_style=Asymmetric(),
-    symm_style=HReflectionRotation(),
-) where {S<:ElementarySpace}
+        H,
+        P::S,
+        V::S;
+        boundary_alg = SimultaneousCTMRG(),
+        gradient_alg = LinSolver(),
+        reuse_env = true,
+        unitcell_style = Asymmetric(),
+        symm_style = HReflectionRotation(),
+    ) where {S <: ElementarySpace}
     A_basis = find_symmetric_basis(P, V, symm_style)
 
     function vector_cfun(x)
@@ -178,7 +178,7 @@ function vector_opt_costfunction(
         E, g = withgradient(a) do v
             ψ = fill_peps(vec2peps(v, A_basis), unitcell_style) # the bamboozle
             env´, _ = PEPSKit.hook_pullback(
-                leading_boundary, env, ψ, boundary_alg; alg_rrule=gradient_alg
+                leading_boundary, env, ψ, boundary_alg; alg_rrule = gradient_alg
             )
             ignore_derivatives() do
                 reuse_env && PEPSKit.update!(env, env´) # in-place update CTMRG environments

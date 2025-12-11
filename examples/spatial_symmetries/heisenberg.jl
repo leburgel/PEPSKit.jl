@@ -1,9 +1,12 @@
 # incorporate spatial symmetries in PEPS optimization: example using Heisenberg model
 
+using Random
 using TensorKit
 using PEPSKit
 using KrylovKit
 using OptimKit
+
+Random.seed!(1234)
 
 # Part O: Setup
 # -------------
@@ -21,16 +24,15 @@ Jz = -1.0
 
 # algorithms
 optim_maxiter = 100
-gradient_iterscheme = :diffgauge
+gradient_iterscheme = :fixed
 boundary_alg = SimultaneousCTMRG(;
-    trscheme=truncdim(χenv), tol=1e-8, miniter=3, maxiter=400, verbosity=2
+    trunc = truncdim(χenv), tol = 1.0e-8, miniter = 3, maxiter = 400, verbosity = 2
 )
-# iterscheme=:fixed is giving me svdsolve cotangent issues, and some errors too...
 gradient_alg = EigSolver(;
-    solver_alg=Arnoldi(; tol=1e-6, maxiter=10, verbosity=2, eager=true),
-    iterscheme=gradient_iterscheme,
-) # :diffgauge necessary for :sequential CTMRG scheme
-optimizer_alg = LBFGS(; gradtol=1e-4, verbosity=3, maxiter=optim_maxiter)
+    solver_alg = Arnoldi(; tol = 1.0e-6, maxiter = 10, verbosity = 2, eager = true),
+    iterscheme = gradient_iterscheme,
+)
+optimizer_alg = LBFGS(32; gradtol = 1.0e-5, verbosity = 3, maxiter = optim_maxiter)
 reuse_env = true
 
 # choose symmetrization style
@@ -66,17 +68,17 @@ env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 
-peps_cfun, peps_inner, peps_retract, peps_transport! = peps_opt_costfunction(
+cfun, inner, retract, transport! = peps_opt_costfunction(
     H; boundary_alg, gradient_alg, reuse_env, unitcell_style, symm_style
 )
 
 (A, env), f, g = optimize(
-    peps_cfun,
+    cfun,
     (A0, env₀),
     optimizer_alg;
-    inner=peps_inner,
-    retract=peps_retract,
-    (transport!)=(peps_transport!),
+    inner = inner,
+    retract = retract,
+    (transport!) = (transport!),
 );
 
 # Part II: automatically impose spatial symmetries using spatially symmetric tensors
@@ -92,19 +94,17 @@ env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 
-vector_cfun, vector_inner, vector_retract, vector_transport! = vector_opt_costfunction(
+cfun, inner, retract, transport! = vector_opt_costfunction(
     H, P, Vpeps; boundary_alg, gradient_alg, reuse_env, unitcell_style, symm_style
 )
 
 (a, env), f, g, numfg, history = optimize(
-    vector_cfun,
+    cfun,
     (a₀, env₀),
     optimizer_alg;
-    inner=vector_inner,
-    retract=vector_retract,
-    (transport!)=(vector_transport!),
+    inner = inner,
+    retract = retract,
+    (transport!) = (transport!),
 );
 
 nothing
-
-# D = 3: non-symm converges to E = -0.663... (??? no clue cause it never converges); symm converges to E = -0.66756...

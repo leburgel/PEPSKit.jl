@@ -16,3 +16,6 @@ SpatiallySymmetricTensors = "267f34df-16a8-4a72-a26d-fb880b511394"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 TensorKit = "07d1fe3e-3e46-537d-9eac-e9e13d0d4cec"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+
+[sources]
+PEPSKit = {path = ".."}

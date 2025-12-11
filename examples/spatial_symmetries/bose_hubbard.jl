@@ -1,10 +1,13 @@
 # incorporate spatial symmetries in PEPS optimization: example using Heisenberg model
 
+using Random
 using TensorKit
 using PEPSKit
 import MPSKit: add_physical_charge
 using OptimKit
 using KrylovKit
+
+Random.seed!(1234)
 
 # Part O: Setup
 # -------------
@@ -18,7 +21,7 @@ Vpeps = U1Space(0 => 2, 1 => 1, -1 => 1)
 Venv = U1Space(0 => 6, 1 => 4, -1 => 4, 2 => 2, -2 => 2)
 
 # uniform auxiliary physical charge, for uniform half-filling
-Saux = U1Irrep(-1)
+Saux = U1Irrep(+1)
 
 # parameters
 t = 1.0
@@ -27,20 +30,21 @@ cutoff = 2
 
 # algorithms
 optim_maxiter = 100
+gradient_iterscheme = :fixed
 boundary_alg = SimultaneousCTMRG(;
-    trscheme=FixedSpaceTruncation(), tol=1e-10, miniter=3, maxiter=400, verbosity=2
+    trunc = FixedSpaceTruncation(), tol = 1.0e-10, miniter = 3, maxiter = 400, verbosity = 2
 )
 gradient_alg = EigSolver(;
-    solver_alg=Arnoldi(; tol=1e-6, maxiter=30, verbosity=2, eager=true),
-    iterscheme=:diffgauge,
-) # :diffgauge necessary for :sequential CTMRG scheme
-optimizer_alg = LBFGS(; gradtol=1e-4, verbosity=3, maxiter=optim_maxiter)
+    solver_alg = Arnoldi(; tol = 1.0e-6, maxiter = 30, verbosity = 2, eager = true),
+    iterscheme = gradient_iterscheme,
+)
+optimizer_alg = LBFGS(32; gradtol = 1.0e-4, verbosity = 3, maxiter = optim_maxiter)
 reuse_env = true
 
 # choose symmetrization style: needs to be U1-compatible!
 # symm_style = None()
 # symm_style = Rotation()
-symm_style = U1HReflectionRotation() # so we need charge conjugation to make things match!
+symm_style = U1HReflectionRotation() # need charge conjugation to make things match
 
 # choose unit cell style: still uniform so can just use the same filling styles as before
 unitcell_style = Asymmetric()
@@ -64,17 +68,17 @@ env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 
-peps_cfun, peps_inner, peps_retract, peps_transport! = peps_opt_costfunction(
+cfun, inner, retract, transport! = peps_opt_costfunction(
     H; boundary_alg, gradient_alg, reuse_env, unitcell_style, symm_style
 )
 
 (A, env), f, g = optimize(
-    peps_cfun,
+    cfun,
     (A0, env₀),
     optimizer_alg;
-    inner=peps_inner,
-    retract=peps_retract,
-    (transport!)=(peps_transport!),
+    inner = inner,
+    retract = retract,
+    (transport!) = (transport!),
 );
 
 # Part II: automatically impose spatial symmetries using spatially symmetric tensors
@@ -90,17 +94,17 @@ env₀, = leading_boundary(CTMRGEnv(ψ₀, Venv), ψ₀, boundary_alg)
 
 ## Optimization
 
-vector_cfun, vector_inner, vector_retract, vector_transport! = vector_opt_costfunction(
+cfun, inner, retract, transport! = vector_opt_costfunction(
     H, P, Vpeps; boundary_alg, gradient_alg, reuse_env, unitcell_style, symm_style
 )
 
 (a, env), f, g, numfg, history = optimize(
-    vector_cfun,
+    cfun,
     (a₀, env₀),
     optimizer_alg;
-    inner=vector_inner,
-    retract=vector_retract,
-    (transport!)=(vector_transport!),
+    inner = inner,
+    retract = retract,
+    (transport!) = (transport!),
 );
 
 nothing
